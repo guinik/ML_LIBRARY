@@ -11,8 +11,8 @@ struct Parameter{
 	F grad;
 
 	void clearGradients() {
-		grad = value;
-		grad.fillValues(0.0f);
+		if (value.data)
+			grad = Matrix(value.dimensions, value.shape);
 	};
 };
 

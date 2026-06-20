@@ -104,11 +104,12 @@ void MiniModel::forwardStep(Node<Matrix>* node)
 	case Operation::RELU:
 		if (left)
 		{
-			Matrix result = left->param.value;
-			for (size_t i{ 0 }; i < left->param.value.data.size(); i++)
-			{
-				result.data[i] = (result.data[i] > 0) ? result.data[i] : 0;
-			}
+			Matrix result(left->param.value.dimensions, left->param.value.shape);
+			const float* src = left->param.value.data->data();
+			float* dst = result.data->data();
+			size_t n = left->param.value.data->size();
+			for (size_t i{ 0 }; i < n; i++)
+				dst[i] = src[i] > 0.0f ? src[i] : 0.0f;
 			node->param.value = result;
 		}
 		break;
@@ -147,8 +148,13 @@ void MiniModel::backwardStep(Node<Matrix>* node)
 	case Operation::MULTIPLY:
 		if (left && right)
 		{
-			left->param.grad = left->param.grad + node->param.grad * right->param.value.transpose();
-			right->param.grad = right->param.grad + left->param.value.transpose() * node->param.grad;
+			auto rightTranspose = right->param.value;
+			rightTranspose.transpose();
+			auto leftTranspose = left->param.value;
+			leftTranspose.transpose();
+
+			left->param.grad = left->param.grad + node->param.grad * rightTranspose;
+			right->param.grad = right->param.grad + leftTranspose * node->param.grad;
 
 		}
 		break;
@@ -164,21 +170,26 @@ void MiniModel::backwardStep(Node<Matrix>* node)
 	case Operation::RELU:
 		if (left)
 		{
-			Matrix result = left->param.value;
-			for (size_t i{ 0 }; i < left->param.value.data.size(); i++)
-			{
-				result.data[i] = (left->param.grad.data[i] > 0) ? node->param.grad.data[i] : 0;
-			}
+			Matrix result(left->param.value.dimensions, left->param.value.shape);
+			const float* val = left->param.value.data->data();
+			const float* grad = node->param.grad.data->data();
+			float* dst = result.data->data();
+			size_t n = left->param.value.data->size();
+			for (size_t i{ 0 }; i < n; i++)
+				dst[i] = val[i] > 0.0f ? grad[i] : 0.0f;
 			left->param.grad = left->param.grad + result;
-
 		}
 		break;
 	case Operation::SQUARE:
 		if (left)
 		{
-			Matrix localGrad = left->param.value;
-			for (size_t i = 0; i < localGrad.data.size(); i++)
-				localGrad.data[i] = 2.0f * left->param.value.data[i] * node->param.grad.data[i];
+			Matrix localGrad(left->param.value.dimensions, left->param.value.shape);
+			const float* val = left->param.value.data->data();
+			const float* grad = node->param.grad.data->data();
+			float* dst = localGrad.data->data();
+			size_t n = left->param.value.data->size();
+			for (size_t i = 0; i < n; i++)
+				dst[i] = 2.0f * val[i] * grad[i];
 			left->param.grad = left->param.grad + localGrad;
 		}
 		break;

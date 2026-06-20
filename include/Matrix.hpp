@@ -1,6 +1,6 @@
 #pragma once
 #include <vector>
-
+#include <memory>
 
 
 struct Matrix
@@ -9,15 +9,36 @@ struct Matrix
 	Matrix(size_t  dimensionsInput, std::vector<size_t> shapes) : dimensions(dimensionsInput), shape(shapes)
 	{
 		size_t totalParameters{ 1 };
-		for (auto shapeDim : shape)
+		strides = shapes;
+		for(size_t i{shapes.size()}; i-- > 0;)
 		{
-			totalParameters *= shapeDim;
+			strides[i] = totalParameters;
+			totalParameters *= shapes[i];
+
 		}
-		data.resize(totalParameters);
+
+		data = std::make_shared<std::vector<float>>(totalParameters);
 	};
+
+	Matrix(const Matrix& other)
+		: dimensions(other.dimensions), shape(other.shape), strides(other.strides),
+		  data(other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr) {}
+
+	Matrix& operator=(const Matrix& other)
+	{
+		if (this != &other)
+		{
+			dimensions = other.dimensions;
+			shape      = other.shape;
+			strides    = other.strides;
+			data       = other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr;
+		}
+		return *this;
+	}
+
 	~Matrix() = default;
 
-	float& operator[](std::vector<size_t> inputDims);
+	float& operator[](const std::vector<size_t>& inputDims) const;
 	Matrix operator+(const Matrix& B) const;
 	Matrix operator-(const Matrix& B) const;
 	Matrix operator*(const Matrix& B) const;
@@ -28,10 +49,11 @@ struct Matrix
 	Matrix operator/(float scaleFactor) const;
 
 	std::vector<size_t> shape;
-	std::vector<float> data;
+	std::vector<size_t> strides;
+	std::shared_ptr<std::vector<float>> data;
 	size_t dimensions;
 
-	Matrix transpose() const;
+	void transpose();
 	void fillValues(float value);
 	Matrix square() const;
 	void randomize(float scale);

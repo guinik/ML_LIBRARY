@@ -1,58 +1,92 @@
 #include "Matrix.hpp"
 #include <stdexcept>
 #include <cstdlib>
+#include <format>
 
-float& Matrix::operator[](std::vector<size_t> inputDims) {
+float& Matrix::operator[](const std::vector<size_t>& inputDims) const {
 	if (inputDims.size() != shape.size())
 	{
 		throw std::runtime_error("Invalid shape input");
 	}
 
 	size_t projectedDim{ 0 };
-	size_t stride{ 1 };
-	std::vector<size_t> dims(inputDims);
 	for (size_t i{ shape.size() }; i-- > 0;)
 	{
-		projectedDim += dims[i] * stride;
-		stride *= dims[i];
+		if (inputDims[i] >= shape[i])
+		{
+			throw std::runtime_error(std::format("Out of bounds index at dim : {}", i));
+		}
+		projectedDim += inputDims[i] * strides[i];
 	}
 
-	return data[projectedDim];
+	return (*data)[projectedDim];
 };
 
 Matrix Matrix::operator+(const Matrix& B) const
 {
-	Matrix result = *this;
 	if (this->shape.size() != B.shape.size())
-	{
 		throw std::runtime_error("Matrices have different dimensions");
-	}
+
 	for (size_t i{ 0 }; i < shape.size(); i++)
 	{
-		if (this->shape[i] != B.shape[i])
-		{
+		if (shape[i] != B.shape[i])
 			throw std::runtime_error("Shapes are not Compatible");
+	}
+
+	Matrix result(dimensions, shape);
+	std::vector<size_t> odometerIdx(shape.size(), 0);
+	size_t totalElements = data->size();
+	for (size_t i{ 0 }; i < totalElements; i++)
+	{
+		result[odometerIdx] = (*this)[odometerIdx] + B[odometerIdx];
+
+		for (size_t d{ odometerIdx.size() }; d-- > 0;)
+		{
+			if (++odometerIdx[d] < shape[d])
+				break;
+			odometerIdx[d] = 0;
 		}
 	}
-	for (size_t i{ 0 }; i < data.size(); i++)
-	{
-		result.data[i] += B.data[i];
-	}
+
 	return result;
 }
 
 Matrix Matrix::operator-(const Matrix& B) const
 {
-	return *this + (B * -1.0f);
+	if (this->shape.size() != B.shape.size())
+		throw std::runtime_error("Matrices have different dimensions");
+
+	for (size_t i{ 0 }; i < shape.size(); i++)
+	{
+		if (shape[i] != B.shape[i])
+			throw std::runtime_error("Shapes are not Compatible");
+	}
+
+	Matrix result(dimensions, shape);
+	std::vector<size_t> odometerIdx(shape.size(), 0);
+	size_t totalElements = data->size();
+	for (size_t i{ 0 }; i < totalElements; i++)
+	{
+		result[odometerIdx] = (*this)[odometerIdx] - B[odometerIdx];
+
+		for (size_t d{ odometerIdx.size() }; d-- > 0;)
+		{
+			if (++odometerIdx[d] < shape[d])
+				break;
+			odometerIdx[d] = 0;
+		}
+	}
+
+	return result;
 }
 
 Matrix Matrix::operator+(float offset) const
 {
 	Matrix result = *this;
-	for (size_t i{ 0 }; i < data.size(); i++)
-	{
-		result.data[i] += offset;
-	}
+	float* p = result.data->data();
+	size_t n = result.data->size();
+	for (size_t i{ 0 }; i < n; i++)
+		p[i] += offset;
 	return result;
 }
 
@@ -70,10 +104,10 @@ Matrix Matrix::operator/(float offset) const
 Matrix Matrix::operator*(float scaleFactor) const
 {
 	Matrix result = *this;
-	for (size_t i{ 0 }; i < data.size(); i++)
-	{
-		result.data[i] *= scaleFactor;
-	}
+	float* p = result.data->data();
+	size_t n = result.data->size();
+	for (size_t i{ 0 }; i < n; i++)
+		p[i] *= scaleFactor;
 	return result;
 }
 
@@ -83,10 +117,24 @@ Matrix Matrix::operator*(const Matrix& B) const
 {
 	std::vector<size_t> shapeA = this->shape;
 	std::vector<size_t> shapeB = B.shape;
+
+	std::vector<size_t> stridesA = this->strides;
+	std::vector<size_t> stridesB = B.strides;
+
 	bool promotedA = false, promotedB = false;
 
-	if (shapeA.size() == 1) { shapeA.insert(shapeA.begin(), 1); promotedA = true; }
-	if (shapeB.size() == 1) { shapeB.push_back(1);              promotedB = true; }
+	if (shapeA.size() == 1) 
+	{ 
+		shapeA.insert(shapeA.begin(), 1); 
+		promotedA = true; 
+		stridesA.insert(stridesA.begin(), stridesA[0]); 
+	}
+	if (shapeB.size() == 1) 
+	{ 
+		shapeB.push_back(1);              
+		promotedB = true;
+		stridesB.push_back(1);
+	}
 
 	if (shapeA.size() < 2 || shapeB.size() < 2)
 		throw std::runtime_error("Operands must have at least 1 dimension");
@@ -119,21 +167,35 @@ Matrix Matrix::operator*(const Matrix& B) const
 	resultShape.push_back(N);
 	Matrix result(resultShape.size(), resultShape);
 
+	const size_t strideA_row = stridesA[stridesA.size() - 2];
+	const size_t strideA_col = stridesA[stridesA.size() - 1];
+	const size_t strideB_row = stridesB[stridesB.size() - 2];
+	const size_t strideB_col = stridesB[stridesB.size() - 1];
+	const size_t strideR_row = result.strides[result.strides.size() - 2];
+	const size_t strideR_col = result.strides[result.strides.size() - 1];
+
+	const float* dataA = this->data->data();
+	const float* dataB = B.data->data();
+	float* dataR = result.data->data();
+
 	for (size_t b{ 0 }; b < batchCount; b++)
 	{
 		size_t baseA = b * M * K;
 		size_t baseB = b * K * N;
-		size_t baseResult = b * M * N;
+		size_t baseR = b * M * N;
 		for (size_t m{ 0 }; m < M; m++)
 		{
+			size_t rowA = baseA + m * strideA_row;
+			size_t rowR = baseR + m * strideR_row;
 			for (size_t n{ 0 }; n < N; n++)
 			{
 				float sum{};
+				size_t colB = baseB + n * strideB_col;
 				for (size_t k{ 0 }; k < K; k++)
 				{
-					sum += this->data[baseA + m * K + k] * B.data[baseB + k * N + n];
+					sum += dataA[rowA + k * strideA_col] * dataB[colB + k * strideB_row];
 				}
-				result.data[baseResult + m * N + n] = sum;
+				dataR[rowR + n * strideR_col] = sum;
 			}
 		}
 	}
@@ -141,63 +203,44 @@ Matrix Matrix::operator*(const Matrix& B) const
 	if (promotedA)
 	{
 		result.shape.erase(result.shape.end() - 2);
+		result.strides.erase(result.strides.end() - 2);
 	};
 	if (promotedB)
 	{
 		result.shape.erase(result.shape.end() - 1);
+		result.strides.erase(result.strides.end() - 1);
 	};
 
 	return result;
 
 }
 
+void Matrix::transpose() {
 
-Matrix Matrix::transpose() const
-{
-	if (shape.size() < 2)
-		throw std::runtime_error("Need at least 2 dimensions to transpose");
+	std::swap(strides[strides.size() - 2], strides[strides.size() - 1]);
+	std::swap(shape[strides.size() - 2], shape[strides.size() - 1]);
 
-	std::vector<size_t> newShape = shape;
-	std::swap(newShape[newShape.size() - 2], newShape[newShape.size() - 1]);
-
-	Matrix result(newShape.size(), newShape);
-
-	size_t M = shape[shape.size() - 2];
-	size_t N = shape[shape.size() - 1];
-	size_t batchCount{ 1 }; 
-	for (size_t i = 0; i < shape.size() - 2; i++) {
-		batchCount *= shape[i];
-	}
-	for (size_t b = 0; b < batchCount; b++)
-	{
-		size_t baseSrc = b * M * N;
-		size_t baseDst = b * N * M;
-		for (size_t m = 0; m < M; m++)
-			for (size_t n = 0; n < N; n++)
-				result.data[baseDst + n * M + m] = data[baseSrc + m * N + n];
-	}
-	return result;
 }
 
 
 void Matrix::fillValues(float value)
 {
-	for (size_t i{ 0 }; i < data.size(); i++)
-	{
-		this->data[i] = value;
-	}
+	std::fill(data->begin(), data->end(), value);
 }
 
 Matrix Matrix::square() const
 {
-	Matrix result = *this;
-	for (size_t i = 0; i < result.data.size(); i++)
-		result.data[i] = result.data[i] * result.data[i];
+	Matrix result(dimensions, shape);
+	const float* src = data->data();
+	float* dst = result.data->data();
+	size_t n = data->size();
+	for (size_t i = 0; i < n; i++)
+		dst[i] = src[i] * src[i];
 	return result;
 }
 
 void Matrix::randomize(float scale)
 {
-	for (auto& w : data)
+	for (auto& w : *data)
 		w = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * scale;
 }
