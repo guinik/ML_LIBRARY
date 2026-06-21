@@ -7,7 +7,7 @@
 int main()
 {
     srand(42);
-    MiniModel model({ 1, 16, 16, 1 }); // input dim 1, two hidden layers of width 8, output dim 1
+    MiniModel model({ 1, 32, 16, 1 }); // input dim 1, two hidden layers of width 8, output dim 1
 
     // training data: step function, 0 before x=5, 1 after
     std::vector<float> inputs;

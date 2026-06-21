@@ -10,13 +10,16 @@ set(ML_SOURCES
 	src/Parameter.cpp
 	src/Matrix.cpp
 	src/MiniModel.cpp
+	src/Optimizer.cpp
+	src/ExecutionGraph.cpp
 )
 
 set(ML_HEADERS
 	include/Parameter.hpp
 	include/Matrix.hpp
 	include/MiniModel.hpp
-
+	include/Optimizer.hpp
+	include/ExecutionGraph.hpp
 )
 
 
