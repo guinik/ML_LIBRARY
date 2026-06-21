@@ -16,8 +16,7 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 		// weight: (outDim, inDim) so weight * input -> (outDim, 1)
 		Node<Matrix>* weightNode = new Node<Matrix>(Operation::LEAF);
 		weightNode->param.value = Matrix(2, { outDim, inDim });
-		//weightNode->param.value.randomize(1.0f / std::sqrt((float)inDim));
-		weightNode->param.value.fillValues(0.0f);
+		weightNode->param.value.randomize(1.0f / std::sqrt((float)inDim));
 		_parameterList.push_back(weightNode);
 
 

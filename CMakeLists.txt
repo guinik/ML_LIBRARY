@@ -31,11 +31,15 @@ add_library(ML_LIBRARY STATIC ${ML_SOURCES} ${ML_HEADERS})
 if(MSVC)
     target_compile_options(ML_LIBRARY PRIVATE /W4 /WX)
 else()
-    target_compile_options(ML_LIBRARY PRIVATE -Wall -Wextra -Werror)
+    target_compile_options(ML_LIBRARY PRIVATE -Wall -Wextra -Werror -O3)
 endif()
 
 target_include_directories(ML_LIBRARY PUBLIC include)
 
 add_executable(EXECUTE src/main.cpp)
+
+if(NOT MSVC)
+    target_compile_options(EXECUTE PRIVATE -O3)
+endif()
 
 target_link_libraries(EXECUTE PRIVATE ML_LIBRARY)

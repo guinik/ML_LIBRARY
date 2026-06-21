@@ -6,7 +6,7 @@
 
 int main()
 {
-    srand(42);
+    srand(4242);
     MiniModel model({ 1, 32, 16, 1 }); // input dim 1, two hidden layers of width 8, output dim 1
 
     // training data: step function, 0 before x=5, 1 after
@@ -19,7 +19,7 @@ int main()
     }
 
     float learningRate = 0.005f;
-    int epochs = 10000;
+    int epochs = 20000;
 
     for (int epoch{ 0 }; epoch < epochs; epoch++)
     {
@@ -35,7 +35,18 @@ int main()
             model.forward(inputMatrix, targetMatrix);
             model.cleanGradients();
             model.backward();
-            model.applyGradient(learningRate);
+            if (epoch < 5000)
+            {
+                model.applyGradient(learningRate);
+            }
+            else if(epoch < 10000)
+            {
+                model.applyGradient(learningRate/10);
+            }
+            else
+            {
+                model.applyGradient(learningRate/20);
+            }
 
             totalLoss += (*model._lossNode->param.value.data)[0];
         }
