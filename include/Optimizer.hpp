@@ -19,7 +19,7 @@ private:
 	std::vector<std::vector<float>> secondMomentParameter;
 	size_t numberOfSteps;
 
-	float beta1 = 0.99f;
-	float beta2 = 0.99f;
-	float eps = 1e-5f;
+	float beta1 = 0.9f;
+	float beta2 = 0.999f;
+	float eps = 1e-8f;
 };

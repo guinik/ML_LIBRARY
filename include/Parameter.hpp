@@ -42,5 +42,4 @@ struct Node
 	Parameter<T> param{};
 	std::array<Node<T>*, 2> children = { nullptr, nullptr };
 	Operation op{Operation::LEAF};
-	bool requires_grad = true;
 };

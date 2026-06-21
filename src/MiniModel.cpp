@@ -5,7 +5,6 @@
 MiniModel::MiniModel(std::vector<size_t> layerSizes)
 {
 	_inputNode = new Node<Matrix>(Operation::LEAF);
-	_inputNode->requires_grad = false;
 
 	Node<Matrix>* currentNode = _inputNode;
 
@@ -17,13 +16,13 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 		// weight: (outDim, inDim) so weight * input -> (outDim, 1)
 		Node<Matrix>* weightNode = new Node<Matrix>(Operation::LEAF);
 		weightNode->param.value = Matrix(2, { outDim, inDim });
-		weightNode->param.value.randomize(1.0f / std::sqrt((float)inDim));
+		//weightNode->param.value.randomize(1.0f / std::sqrt((float)inDim));
+		weightNode->param.value.fillValues(0.0f);
 		_parameterList.push_back(weightNode);
 
 
 		Node<Matrix>* matmulNode = new Node<Matrix>(Operation::MULTIPLY);
 		matmulNode->children = { weightNode, currentNode };
-		matmulNode->requires_grad = false;
 
 		// bias: (outDim, 1)
 		Node<Matrix>* biasNode = new Node<Matrix>(Operation::LEAF);
@@ -34,14 +33,12 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 
 		Node<Matrix>* addNode = new Node<Matrix>(Operation::ADD);
 		addNode->children = { matmulNode, biasNode };
-		addNode->requires_grad = false;
 
 		bool isLastLayer = (layer + 2 == layerSizes.size());
 		if (!isLastLayer)
 		{
 			Node<Matrix>* reluNode = new Node<Matrix>(Operation::RELU);
 			reluNode->children = { addNode, nullptr };
-			reluNode->requires_grad = false;
 			currentNode = reluNode;
 			
 		}
@@ -54,14 +51,11 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 	_resultNode = currentNode;
 
 	Node<Matrix>* substractNode = new Node<Matrix>(Operation::SUBSTRACT);
-	substractNode->requires_grad = false;
 	Node<Matrix>* targetNode = new Node<Matrix>(Operation::LEAF);
-	targetNode->requires_grad = false;
 	substractNode->children = { _resultNode, targetNode };
 
 	Node<Matrix>* lossNode = new Node<Matrix>(Operation::SQUARE);
 	lossNode->children = { substractNode, nullptr };
-	lossNode->requires_grad = false;
 
 	_lossNode = lossNode;
 	_targetNode = targetNode;
