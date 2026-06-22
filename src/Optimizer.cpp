@@ -2,7 +2,7 @@
 #include <algorithm>
 #include <cmath>
 
-AdamOptimizer::AdamOptimizer(std::vector<Node<Tensor>*> parameterPtrList) : parameterNodePtrs(parameterPtrList)
+AdamOptimizer::AdamOptimizer(std::vector<std::shared_ptr<Node>> parameterPtrList) : parameterNodePtrs(parameterPtrList)
 {
 	firstMomentParameter.reserve(parameterNodePtrs.size());
 	secondMomentParameter.reserve(parameterNodePtrs.size());

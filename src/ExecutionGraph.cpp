@@ -3,10 +3,9 @@
 #include <stdexcept>
 namespace
 {
-	template<typename T>
-	void dfsNode(Node<T>* node, std::unordered_set<const Node<T>*>& doneSet,
-		std::unordered_set<const Node<T>*>& inProgress,
-		std::vector<Node<T>*>& result)
+	void dfsNode( std::shared_ptr<Node> node, std::unordered_set<std::shared_ptr<Node>>& doneSet,
+		std::unordered_set<std::shared_ptr<Node>>& inProgress,
+		std::vector<std::shared_ptr<Node>>& result)
 	{
 		inProgress.insert(node);
 		for (auto& child : node->children)
@@ -22,156 +21,30 @@ namespace
 			
 			if (doneSet.find(child) == doneSet.end())
 			{
-				dfsNode<T>(child, doneSet, inProgress, result);
+				dfsNode(child, doneSet, inProgress, result);
 			}
 		}
 		inProgress.erase(node);
 		doneSet.insert(node);
 		result.push_back(node);
 	};
-	template <typename T>
-	std::vector<Node<T>*> topoOrder( Node<T>* lossNode) 
+
+	std::vector<std::shared_ptr<Node>> topoOrder( std::shared_ptr<Node> lossNode) 
 	{
 
-		std::unordered_set<const Node<T>*> seenSet;
-		std::unordered_set<const Node<T>*> inProgress;
-		std::vector<Node<T>*> result;
+		std::unordered_set<std::shared_ptr<Node>> seenSet;
+		std::unordered_set<std::shared_ptr<Node>> inProgress;
+		std::vector<std::shared_ptr<Node>> result;
 
-		dfsNode<T>(lossNode, seenSet, inProgress, result);
+		dfsNode(lossNode, seenSet, inProgress, result);
 		return result;
 	};
-
-
-	void computeNodeForward(Node<Tensor>* node)
-	{
-		auto& left = node->children[0];
-		auto& right = node->children[1];
-		switch (node->op)
-		{
-			case Operation::LEAF: break;
-
-			case Operation::ADD:
-				if (left && right) {
-					node->param.value = left->param.value + right->param.value;
-				}
-				break;
-
-			case Operation::MULTIPLY:
-				if (left && right)
-				{
-					node->param.value = left->param.value * right->param.value;
-				}
-				break;
-			case Operation::SUBSTRACT:
-				if (left && right)
-				{
-					node->param.value = left->param.value - right->param.value;
-				}
-				break;
-
-			case Operation::RELU:
-				if (left)
-				{
-					
-					Tensor result(left->param.value.dimensions, left->param.value.shape);
-					const float* src = left->param.value.data->data();
-					float* dst = result.data->data();
-					size_t n = left->param.value.data->size();
-					for (size_t i{ 0 }; i < n; i++)
-						dst[i] = src[i] > 0.0f ? src[i] : 0.0f;
-					node->param.value = result;
-				}
-				break;
-
-			case Operation::SQUARE:
-			{
-				if (left)
-				{
-					node->param.value = left->param.value.square();
-				}
-				break;
-			}
-		}
-	};
-
-
-
-	void computeNodeBackward(Node<Tensor>* node)
-	{
-	
-		auto left = node->children[0];
-		auto right = node->children[1];
-
-
-		switch (node->op)
-		{
-			case Operation::LEAF: break;
-
-			case Operation::ADD:
-				if (left && right)
-				{
-					left->param.grad = left->param.grad + node->param.grad;
-					right->param.grad = right->param.grad + node->param.grad;
-				}
-				break;
-			case Operation::MULTIPLY:
-				if (left && right)
-				{
-					auto rightTranspose = right->param.value;
-					rightTranspose.transpose();
-					auto leftTranspose = left->param.value;
-					leftTranspose.transpose();
-
-					left->param.grad = left->param.grad + node->param.grad * rightTranspose;
-					right->param.grad = right->param.grad + leftTranspose * node->param.grad;
-
-				}
-				break;
-			case Operation::SUBSTRACT:
-				if (left && right)
-				{
-					right->param.grad = right->param.grad - node->param.grad;
-					left->param.grad = left->param.grad + node->param.grad;
-
-				}
-				break;
-
-			case Operation::RELU:
-				if (left)
-				{
-					Tensor result(left->param.value.dimensions, left->param.value.shape);
-					const float* val = left->param.value.data->data();
-					const float* grad = node->param.grad.data->data();
-					float* dst = result.data->data();
-					size_t n = left->param.value.data->size();
-					for (size_t i{ 0 }; i < n; i++)
-						dst[i] = val[i] > 0.0f ? grad[i] : 0.0f;
-					left->param.grad = left->param.grad + result;
-				}
-				break;
-			case Operation::SQUARE:
-				if (left)
-				{
-					Tensor localGrad(left->param.value.dimensions, left->param.value.shape);
-					const float* val = left->param.value.data->data();
-					const float* grad = node->param.grad.data->data();
-					float* dst = localGrad.data->data();
-					size_t n = left->param.value.data->size();
-					for (size_t i = 0; i < n; i++)
-						dst[i] = 2.0f * val[i] * grad[i];
-					left->param.grad = left->param.grad + localGrad;
-				}
-				break;
-		}
-
-	
-	}
 
 }
 
 
-ExecutionGraph::ExecutionGraph(Node<Tensor>* lossNode)
-	: _executionOrder(topoOrder<Tensor>(lossNode))
+ExecutionGraph::ExecutionGraph(std::shared_ptr<Node> lossNode)
+	: _executionOrder(topoOrder(lossNode))
 {
 };
 
@@ -179,7 +52,7 @@ void ExecutionGraph::computeForward()
 {
 	for(auto& nodePtr : _executionOrder)
 	{
-		computeNodeForward(nodePtr);
+		nodePtr->forward();
 	}
 };
 
@@ -189,7 +62,7 @@ void ExecutionGraph::computeBackward()
 
 	for(size_t i{ _executionOrder.size()}; i-- > 0;)
 	{
-		computeNodeBackward(_executionOrder[i]);
+		_executionOrder[i]->backward();
 	}
 };
 

@@ -2,15 +2,15 @@
 #include <vector>
 #include "Parameter.hpp"
 #include "Tensor.hpp"
+#include "Node.hpp"
 #include <optional>
-//using ExecutionGraph = std::vector<Node<Tensor>*>;
 
 
 class ExecutionGraph
 {
 public:
 	// TODO, it might make more sense, to define from target node and then build on top the loss
-	ExecutionGraph (Node<Tensor>* lossNode);
+	ExecutionGraph (std::shared_ptr<Node> lossNode);
 	~ExecutionGraph() = default;
 	
 	ExecutionGraph(ExecutionGraph&&) noexcept = default;
@@ -24,7 +24,7 @@ public:
 	void computeBackward();
 
 private:
-	const std::vector<Node<Tensor>*> _executionOrder;// defined as forward pass order
+	const std::vector<std::shared_ptr<Node>> _executionOrder;// defined as forward pass order
 
 
 };

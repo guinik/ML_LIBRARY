@@ -15,31 +15,3 @@ struct Parameter{
 			grad = Tensor(value.dimensions, value.shape);
 	};
 };
-
-enum class Operation
-{
-	LEAF,
-	//these are unary
-	RELU,
-	
-	// these are non unary
-	ADD,
-	SUBSTRACT,
-	MULTIPLY,
-	DIVIDE,
-	SQUARE
-
-
-
-};
-
-// node should be at most binary. 
-template <typename T>
-struct Node
-{
-	Node(Operation inputOp) : op(inputOp) {};
-	~Node() = default;
-	Parameter param{};
-	std::array<Node<T>*, 2> children = { nullptr, nullptr };
-	Operation op{Operation::LEAF};
-};

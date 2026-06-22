@@ -4,9 +4,9 @@
 #include <cmath>
 MiniModel::MiniModel(std::vector<size_t> layerSizes)
 {
-	_inputNode = new Node<Tensor>(Operation::LEAF);
+	_inputNode = std::make_shared<Node>();
 
-	Node<Tensor>* currentNode = _inputNode;
+	std::shared_ptr<Node> currentNode = _inputNode;
 
 	for (size_t layer = 0; layer + 1 < layerSizes.size(); layer++)
 	{
@@ -14,29 +14,29 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 		size_t outDim = layerSizes[layer + 1];
 
 		// weight: (outDim, inDim) so weight * input -> (outDim, 1)
-		Node<Tensor>* weightNode = new Node<Tensor>(Operation::LEAF);
+		std::shared_ptr<Node> weightNode = std::make_shared<Node>();
 		weightNode->param.value = Tensor(2, { outDim, inDim });
 		weightNode->param.value.randomize(1.0f / std::sqrt((float)inDim));
 		_parameterList.push_back(weightNode);
 
 
-		Node<Tensor>* matmulNode = new Node<Tensor>(Operation::MULTIPLY);
+		std::shared_ptr<Node> matmulNode = std::make_shared<Node>(std::make_shared<MatMulOperation>());
 		matmulNode->children = { weightNode, currentNode };
 
 		// bias: (outDim, 1)
-		Node<Tensor>* biasNode = new Node<Tensor>(Operation::LEAF);
+		std::shared_ptr<Node> biasNode = std::make_shared<Node>();
 		biasNode->param.value = Tensor(2, { outDim, 1 });
 		biasNode->param.value.randomize(1.0f / std::sqrt((float)inDim));
 		_parameterList.push_back(biasNode);
 
 
-		Node<Tensor>* addNode = new Node<Tensor>(Operation::ADD);
+		std::shared_ptr<Node> addNode = std::make_shared<Node>(std::make_shared<AddOperation>());
 		addNode->children = { matmulNode, biasNode };
 
 		bool isLastLayer = (layer + 2 == layerSizes.size());
 		if (!isLastLayer)
 		{
-			Node<Tensor>* reluNode = new Node<Tensor>(Operation::RELU);
+			std::shared_ptr<Node> reluNode = std::make_shared<Node>(std::make_shared<SigmoidOperation>());
 			reluNode->children = { addNode, nullptr };
 			currentNode = reluNode;
 			
@@ -49,11 +49,11 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 
 	_resultNode = currentNode;
 
-	Node<Tensor>* substractNode = new Node<Tensor>(Operation::SUBSTRACT);
-	Node<Tensor>* targetNode = new Node<Tensor>(Operation::LEAF);
+	std::shared_ptr<Node> substractNode = std::make_shared<Node>(std::make_shared<SubtractOperation>());
+	std::shared_ptr<Node> targetNode = std::make_shared<Node>();
 	substractNode->children = { _resultNode, targetNode };
 
-	Node<Tensor>* lossNode = new Node<Tensor>(Operation::SQUARE);
+	std::shared_ptr<Node> lossNode = std::make_shared<Node>(std::make_shared<SquareOperation>());
 	lossNode->children = { substractNode, nullptr };
 
 	_lossNode = lossNode;
@@ -91,7 +91,7 @@ void MiniModel::backward()
 
 };
 
-void MiniModel::dfsCleanGradients(Node<Tensor>* node)
+void MiniModel::dfsCleanGradients(std::shared_ptr<Node> node)
 {
 	if (!node) return;
 	dfsCleanGradients(node->children[0]);
