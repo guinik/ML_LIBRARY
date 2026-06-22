@@ -1,9 +1,9 @@
-#include "Matrix.hpp"
+#include "Tensor.hpp"
 #include <stdexcept>
 #include <cstdlib>
 #include <format>
 
-float& Matrix::operator[](const std::vector<size_t>& inputDims) const {
+float& Tensor::operator[](const std::vector<size_t>& inputDims) const {
 	if (inputDims.size() != shape.size())
 	{
 		throw std::runtime_error("Invalid shape input");
@@ -22,7 +22,7 @@ float& Matrix::operator[](const std::vector<size_t>& inputDims) const {
 	return (*data)[projectedDim];
 };
 
-Matrix Matrix::operator+(const Matrix& B) const
+Tensor Tensor::operator+(const Tensor& B) const
 {
 	if (this->shape.size() != B.shape.size())
 		throw std::runtime_error("Matrices have different dimensions");
@@ -33,7 +33,7 @@ Matrix Matrix::operator+(const Matrix& B) const
 			throw std::runtime_error("Shapes are not Compatible");
 	}
 
-	Matrix result(dimensions, shape);
+	Tensor result(dimensions, shape);
 	std::vector<size_t> odometerIdx(shape.size(), 0);
 	size_t totalElements = data->size();
 	for (size_t i{ 0 }; i < totalElements; i++)
@@ -51,7 +51,7 @@ Matrix Matrix::operator+(const Matrix& B) const
 	return result;
 }
 
-Matrix Matrix::operator-(const Matrix& B) const
+Tensor Tensor::operator-(const Tensor& B) const
 {
 	if (this->shape.size() != B.shape.size())
 		throw std::runtime_error("Matrices have different dimensions");
@@ -62,7 +62,7 @@ Matrix Matrix::operator-(const Matrix& B) const
 			throw std::runtime_error("Shapes are not Compatible");
 	}
 
-	Matrix result(dimensions, shape);
+	Tensor result(dimensions, shape);
 	std::vector<size_t> odometerIdx(shape.size(), 0);
 	size_t totalElements = data->size();
 	for (size_t i{ 0 }; i < totalElements; i++)
@@ -80,9 +80,9 @@ Matrix Matrix::operator-(const Matrix& B) const
 	return result;
 }
 
-Matrix Matrix::operator+(float offset) const
+Tensor Tensor::operator+(float offset) const
 {
-	Matrix result = *this;
+	Tensor result = *this;
 	float* p = result.data->data();
 	size_t n = result.data->size();
 	for (size_t i{ 0 }; i < n; i++)
@@ -90,20 +90,20 @@ Matrix Matrix::operator+(float offset) const
 	return result;
 }
 
-Matrix Matrix::operator-(float offset) const
+Tensor Tensor::operator-(float offset) const
 {
 	return operator+(-offset);
 }
 
-Matrix Matrix::operator/(float offset) const
+Tensor Tensor::operator/(float offset) const
 {
 	return operator*(1/offset);
 }
 
 
-Matrix Matrix::operator*(float scaleFactor) const
+Tensor Tensor::operator*(float scaleFactor) const
 {
-	Matrix result = *this;
+	Tensor result = *this;
 	float* p = result.data->data();
 	size_t n = result.data->size();
 	for (size_t i{ 0 }; i < n; i++)
@@ -113,7 +113,7 @@ Matrix Matrix::operator*(float scaleFactor) const
 
 
 
-Matrix Matrix::operator*(const Matrix& B) const
+Tensor Tensor::operator*(const Tensor& B) const
 {
 	std::vector<size_t> shapeA = this->shape;
 	std::vector<size_t> shapeB = B.shape;
@@ -165,7 +165,7 @@ Matrix Matrix::operator*(const Matrix& B) const
 	std::vector<size_t> resultShape = batchShape;
 	resultShape.push_back(M);
 	resultShape.push_back(N);
-	Matrix result(resultShape.size(), resultShape);
+	Tensor result(resultShape.size(), resultShape);
 
 	const size_t strideA_row = stridesA[stridesA.size() - 2];
 	const size_t strideA_col = stridesA[stridesA.size() - 1];
@@ -215,7 +215,7 @@ Matrix Matrix::operator*(const Matrix& B) const
 
 }
 
-void Matrix::transpose() {
+void Tensor::transpose() {
 
 	std::swap(strides[strides.size() - 2], strides[strides.size() - 1]);
 	std::swap(shape[strides.size() - 2], shape[strides.size() - 1]);
@@ -223,14 +223,14 @@ void Matrix::transpose() {
 }
 
 
-void Matrix::fillValues(float value)
+void Tensor::fillValues(float value)
 {
 	std::fill(data->begin(), data->end(), value);
 }
 
-Matrix Matrix::square() const
+Tensor Tensor::square() const
 {
-	Matrix result(dimensions, shape);
+	Tensor result(dimensions, shape);
 	const float* src = data->data();
 	float* dst = result.data->data();
 	size_t n = data->size();
@@ -239,7 +239,7 @@ Matrix Matrix::square() const
 	return result;
 }
 
-void Matrix::randomize(float scale)
+void Tensor::randomize(float scale)
 {
 	for (auto& w : *data)
 		w = ((float)rand() / RAND_MAX - 0.5f) * 2.0f * scale;

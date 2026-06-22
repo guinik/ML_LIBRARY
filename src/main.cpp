@@ -1,13 +1,22 @@
-#include "Matrix.hpp"
+#include "Tensor.hpp"
 #include "MiniModel.hpp"
 #include <vector>
 #include <iostream>
 #include <cstdlib>
 
+float stepFunction(float x)
+{
+    if (x < 2.0f)  return 0.0f;
+    if (x < 4.0f)  return 1.0f;
+    if (x < 6.0f)  return 0.3f;
+    if (x < 8.0f)  return 0.8f;
+    return 0.1f;
+}
+
 int main()
 {
     srand(4242);
-    MiniModel model({ 1, 32, 16, 1 }); // input dim 1, two hidden layers of width 8, output dim 1
+    MiniModel model({ 1, 64, 32, 1 }); // input dim 1, two hidden layers of width 8, output dim 1
 
     // training data: step function, 0 before x=5, 1 after
     std::vector<float> inputs;
@@ -15,7 +24,7 @@ int main()
     for (float x = 0.0f; x <= 10.0f; x += 0.1f)
     {
         inputs.push_back(x);
-        outputs.push_back(x < 5.0f ? 0.0f : 1.0f);
+        outputs.push_back(stepFunction(x));
     }
 
     float learningRate = 0.005f;
@@ -26,13 +35,14 @@ int main()
         float totalLoss = 0.0f;
         for (size_t i{ 0 }; i < inputs.size(); i++)
         {
-            Matrix inputMatrix(2, { 1, 1 });
-            (*inputMatrix.data)[0] = inputs[i];
+            
+            Tensor inputTensor(2, { 1, 1 });
+            (*inputTensor.data)[0] = inputs[i];
 
-            Matrix targetMatrix(2, { 1, 1 });
-            (*targetMatrix.data)[0] = outputs[i];
+            Tensor targetTensor(2, { 1, 1 });
+            (*targetTensor.data)[0] = outputs[i];
 
-            model.forward(inputMatrix, targetMatrix);
+            model.forward(inputTensor, targetTensor);
             model.cleanGradients();
             model.backward();
             if (epoch < 5000)
@@ -56,14 +66,14 @@ int main()
     }
 
     // see what it learned
-    for (float x = 0.0f; x <= 10.0f; x += 1.0f)
+    for (float x = 0.0f; x <= 10.0f; x += 0.5f)
     {
-        Matrix inputMatrix(2, { 1, 1 });
-        (*inputMatrix.data)[0] = x;
-        Matrix dummyTarget(2, { 1, 1 }); // unused by the actual prediction, just needed to call forward()
-
-        Matrix predicted = model.forward(inputMatrix, dummyTarget);
-        std::cout << "x = " << x << "  predicted = " << (*predicted.data)[0] << std::endl;
+        Tensor inputTensor(2, { 1, 1 });
+        (*inputTensor.data)[0] = x;
+        Tensor dummyTarget(2, { 1, 1 });
+        Tensor predicted = model.forward(inputTensor, dummyTarget);
+        std::cout << "x = " << x << "  target = " << stepFunction(x)
+            << "  predicted = " << (*predicted.data)[0] << std::endl;
     }
 
     return 0;

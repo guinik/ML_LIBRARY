@@ -42,7 +42,7 @@ namespace
 	};
 
 
-	void computeNodeForward(Node<Matrix>* node)
+	void computeNodeForward(Node<Tensor>* node)
 	{
 		auto& left = node->children[0];
 		auto& right = node->children[1];
@@ -72,7 +72,8 @@ namespace
 			case Operation::RELU:
 				if (left)
 				{
-					Matrix result(left->param.value.dimensions, left->param.value.shape);
+					
+					Tensor result(left->param.value.dimensions, left->param.value.shape);
 					const float* src = left->param.value.data->data();
 					float* dst = result.data->data();
 					size_t n = left->param.value.data->size();
@@ -95,7 +96,7 @@ namespace
 
 
 
-	void computeNodeBackward(Node<Matrix>* node)
+	void computeNodeBackward(Node<Tensor>* node)
 	{
 	
 		auto left = node->children[0];
@@ -138,7 +139,7 @@ namespace
 			case Operation::RELU:
 				if (left)
 				{
-					Matrix result(left->param.value.dimensions, left->param.value.shape);
+					Tensor result(left->param.value.dimensions, left->param.value.shape);
 					const float* val = left->param.value.data->data();
 					const float* grad = node->param.grad.data->data();
 					float* dst = result.data->data();
@@ -151,7 +152,7 @@ namespace
 			case Operation::SQUARE:
 				if (left)
 				{
-					Matrix localGrad(left->param.value.dimensions, left->param.value.shape);
+					Tensor localGrad(left->param.value.dimensions, left->param.value.shape);
 					const float* val = left->param.value.data->data();
 					const float* grad = node->param.grad.data->data();
 					float* dst = localGrad.data->data();
@@ -169,8 +170,8 @@ namespace
 }
 
 
-ExecutionGraph::ExecutionGraph(Node<Matrix>* lossNode)
-	: _executionOrder(topoOrder<Matrix>(lossNode))
+ExecutionGraph::ExecutionGraph(Node<Tensor>* lossNode)
+	: _executionOrder(topoOrder<Tensor>(lossNode))
 {
 };
 

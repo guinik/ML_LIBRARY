@@ -1,27 +1,14 @@
-
 #pragma once
 #include <array>
-#include "Tensor.hpp"
+#include "Parameter.hpp"
 
-struct Parameter{
-	Parameter() = default;
-	~Parameter() = default;
-
-	Tensor value;
-	Tensor grad;
-
-	void clearGradients() {
-		if (value.data)
-			grad = Tensor(value.dimensions, value.shape);
-	};
-};
 
 enum class Operation
 {
 	LEAF,
 	//these are unary
 	RELU,
-	
+
 	// these are non unary
 	ADD,
 	SUBSTRACT,
@@ -33,13 +20,19 @@ enum class Operation
 
 };
 
+struct Operation
+{
+	virtual void forward();
+	virtual void backward();
+};
+
 // node should be at most binary. 
 template <typename T>
 struct Node
 {
 	Node(Operation inputOp) : op(inputOp) {};
 	~Node() = default;
-	Parameter param{};
+	Parameter<T> param{};
 	std::array<Node<T>*, 2> children = { nullptr, nullptr };
-	Operation op{Operation::LEAF};
+	Operation op{ Operation::LEAF };
 };

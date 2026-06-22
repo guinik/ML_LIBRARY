@@ -1,12 +1,12 @@
-#include "Matrix.hpp"
+#include "Tensor.hpp"
 #include "MiniModel.hpp"
 #include <stdexcept>
 #include <cmath>
 MiniModel::MiniModel(std::vector<size_t> layerSizes)
 {
-	_inputNode = new Node<Matrix>(Operation::LEAF);
+	_inputNode = new Node<Tensor>(Operation::LEAF);
 
-	Node<Matrix>* currentNode = _inputNode;
+	Node<Tensor>* currentNode = _inputNode;
 
 	for (size_t layer = 0; layer + 1 < layerSizes.size(); layer++)
 	{
@@ -14,29 +14,29 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 		size_t outDim = layerSizes[layer + 1];
 
 		// weight: (outDim, inDim) so weight * input -> (outDim, 1)
-		Node<Matrix>* weightNode = new Node<Matrix>(Operation::LEAF);
-		weightNode->param.value = Matrix(2, { outDim, inDim });
+		Node<Tensor>* weightNode = new Node<Tensor>(Operation::LEAF);
+		weightNode->param.value = Tensor(2, { outDim, inDim });
 		weightNode->param.value.randomize(1.0f / std::sqrt((float)inDim));
 		_parameterList.push_back(weightNode);
 
 
-		Node<Matrix>* matmulNode = new Node<Matrix>(Operation::MULTIPLY);
+		Node<Tensor>* matmulNode = new Node<Tensor>(Operation::MULTIPLY);
 		matmulNode->children = { weightNode, currentNode };
 
 		// bias: (outDim, 1)
-		Node<Matrix>* biasNode = new Node<Matrix>(Operation::LEAF);
-		biasNode->param.value = Matrix(2, { outDim, 1 });
+		Node<Tensor>* biasNode = new Node<Tensor>(Operation::LEAF);
+		biasNode->param.value = Tensor(2, { outDim, 1 });
 		biasNode->param.value.randomize(1.0f / std::sqrt((float)inDim));
 		_parameterList.push_back(biasNode);
 
 
-		Node<Matrix>* addNode = new Node<Matrix>(Operation::ADD);
+		Node<Tensor>* addNode = new Node<Tensor>(Operation::ADD);
 		addNode->children = { matmulNode, biasNode };
 
 		bool isLastLayer = (layer + 2 == layerSizes.size());
 		if (!isLastLayer)
 		{
-			Node<Matrix>* reluNode = new Node<Matrix>(Operation::RELU);
+			Node<Tensor>* reluNode = new Node<Tensor>(Operation::RELU);
 			reluNode->children = { addNode, nullptr };
 			currentNode = reluNode;
 			
@@ -49,11 +49,11 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 
 	_resultNode = currentNode;
 
-	Node<Matrix>* substractNode = new Node<Matrix>(Operation::SUBSTRACT);
-	Node<Matrix>* targetNode = new Node<Matrix>(Operation::LEAF);
+	Node<Tensor>* substractNode = new Node<Tensor>(Operation::SUBSTRACT);
+	Node<Tensor>* targetNode = new Node<Tensor>(Operation::LEAF);
 	substractNode->children = { _resultNode, targetNode };
 
-	Node<Matrix>* lossNode = new Node<Matrix>(Operation::SQUARE);
+	Node<Tensor>* lossNode = new Node<Tensor>(Operation::SQUARE);
 	lossNode->children = { substractNode, nullptr };
 
 	_lossNode = lossNode;
@@ -65,7 +65,7 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 
 }
 
-Matrix MiniModel::forward(Matrix input, Matrix output)
+Tensor MiniModel::forward(Tensor input, Tensor output)
 {
 	_inputNode->param.value = input;
 	_targetNode->param.value = output;
@@ -91,7 +91,7 @@ void MiniModel::backward()
 
 };
 
-void MiniModel::dfsCleanGradients(Node<Matrix>* node)
+void MiniModel::dfsCleanGradients(Node<Tensor>* node)
 {
 	if (!node) return;
 	dfsCleanGradients(node->children[0]);

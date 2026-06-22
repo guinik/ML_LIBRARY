@@ -1,16 +1,16 @@
 #pragma once
 #include <vector>
 #include "Parameter.hpp"
-#include "Matrix.hpp"
+#include "Tensor.hpp"
 #include <optional>
-//using ExecutionGraph = std::vector<Node<Matrix>*>;
+//using ExecutionGraph = std::vector<Node<Tensor>*>;
 
 
 class ExecutionGraph
 {
 public:
 	// TODO, it might make more sense, to define from target node and then build on top the loss
-	ExecutionGraph (Node<Matrix>* lossNode);
+	ExecutionGraph (Node<Tensor>* lossNode);
 	~ExecutionGraph() = default;
 	
 	ExecutionGraph(ExecutionGraph&&) noexcept = default;
@@ -24,7 +24,7 @@ public:
 	void computeBackward();
 
 private:
-	const std::vector<Node<Matrix>*> _executionOrder;// defined as forward pass order
+	const std::vector<Node<Tensor>*> _executionOrder;// defined as forward pass order
 
 
 };

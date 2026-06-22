@@ -3,10 +3,12 @@
 #include <memory>
 
 
-struct Matrix
+
+
+struct Tensor
 {
-	Matrix() : dimensions(0) {};
-	Matrix(size_t  dimensionsInput, std::vector<size_t> shapes) : dimensions(dimensionsInput), shape(shapes)
+	Tensor() : dimensions(0) {};
+	Tensor(size_t  dimensionsInput, std::vector<size_t> shapes) : dimensions(dimensionsInput), shape(shapes)
 	{
 		size_t totalParameters{ 1 };
 		strides = shapes;
@@ -20,11 +22,11 @@ struct Matrix
 		data = std::make_shared<std::vector<float>>(totalParameters);
 	};
 
-	Matrix(const Matrix& other)
+	Tensor(const Tensor& other)
 		: dimensions(other.dimensions), shape(other.shape), strides(other.strides),
 		  data(other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr) {}
 
-	Matrix& operator=(const Matrix& other)
+	Tensor& operator=(const Tensor& other)
 	{
 		if (this != &other)
 		{
@@ -36,17 +38,16 @@ struct Matrix
 		return *this;
 	}
 
-	~Matrix() = default;
-
+	~Tensor() = default;
 	float& operator[](const std::vector<size_t>& inputDims) const;
-	Matrix operator+(const Matrix& B) const;
-	Matrix operator-(const Matrix& B) const;
-	Matrix operator*(const Matrix& B) const;
+	Tensor operator+(const Tensor& B) const;
+	Tensor operator-(const Tensor& B) const;
+	Tensor operator*(const Tensor& B) const;
 
-	Matrix operator+(float scaleFactor) const;
-	Matrix operator*(float scaleFactor) const;
-	Matrix operator-(float scaleFactor) const;
-	Matrix operator/(float scaleFactor) const;
+	Tensor operator+(float scaleFactor) const;
+	Tensor operator*(float scaleFactor) const;
+	Tensor operator-(float scaleFactor) const;
+	Tensor operator/(float scaleFactor) const;
 
 	std::vector<size_t> shape;
 	std::vector<size_t> strides;
@@ -55,6 +56,6 @@ struct Matrix
 
 	void transpose();
 	void fillValues(float value);
-	Matrix square() const;
+	Tensor square() const;
 	void randomize(float scale);
 };

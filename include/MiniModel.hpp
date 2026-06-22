@@ -10,21 +10,21 @@ class MiniModel
 public:
 	MiniModel(std::vector<size_t> layerSizes);
 	~MiniModel() = default;
-	Node<Matrix>* _resultNode;
-	Node<Matrix>* _inputNode;
-	Node<Matrix>* _lossNode;
-	Node<Matrix>* _targetNode;
+	Node<Tensor>* _resultNode;
+	Node<Tensor>* _inputNode;
+	Node<Tensor>* _lossNode;
+	Node<Tensor>* _targetNode;
 
-	Matrix forward(Matrix input, Matrix output);
+	Tensor forward(Tensor input, Tensor output);
 	void backward();
 	void applyGradient(float learning_rate = 0.001);
 	void cleanGradients();
 private:
-	void applyGradientStep(Node<Matrix>* node, float learning_Rate );
-	void dfsCleanGradients(Node<Matrix>* node);
+	void applyGradientStep(Node<Tensor>* node, float learning_Rate );
+	void dfsCleanGradients(Node<Tensor>* node);
 
 	std::optional<ExecutionGraph> _executionGraph; //TODO : decouple from the model class
-	std::vector<Node<Matrix>*> _parameterList;
+	std::vector<Node<Tensor>*> _parameterList;
 	std::optional<AdamOptimizer> _optimizer;
 
 };

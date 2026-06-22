@@ -8,18 +8,20 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(ML_SOURCES
 	src/Parameter.cpp
-	src/Matrix.cpp
+	src/Tensor.cpp
 	src/MiniModel.cpp
 	src/Optimizer.cpp
 	src/ExecutionGraph.cpp
+	src/Node.cpp
 )
 
 set(ML_HEADERS
 	include/Parameter.hpp
-	include/Matrix.hpp
+	include/Tensor.hpp
 	include/MiniModel.hpp
 	include/Optimizer.hpp
 	include/ExecutionGraph.hpp
+	include/Node.hpp
 )
 
 
