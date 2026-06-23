@@ -2,6 +2,14 @@
 #include <array>
 #include "Parameter.hpp"
 
+enum MatMulFlags : uint16_t
+{
+	MATMUL_NO_TRANSPOSES = 0,
+	MATMUL_TRANSPOSE_A = 1 << 0,
+	MATMUL_TRANSPOSE_B = 1 << 1
+};
+
+
 struct Operation
 {
 	virtual ~Operation() = default;

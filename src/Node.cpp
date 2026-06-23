@@ -3,14 +3,35 @@
 #include <cmath>
 namespace
 {
-	Tensor matMul(const Tensor& A, const Tensor& B)
+	void swapLastTwoDims(std::vector<size_t>& A)
 	{
+		std::swap(A[A.size() - 1], A[A.size() - 2]);
+	};
+
+	Tensor matMul(const Tensor& A, const Tensor& B, uint16_t mask)
+	{
+
+
 		std::vector<size_t> shapeA = A.shape;
 		std::vector<size_t> shapeB = B.shape;
 
 		std::vector<size_t> stridesA = A.strides;
 		std::vector<size_t> stridesB = B.strides;
 
+		bool transposeA = (mask & MatMulFlags::MATMUL_TRANSPOSE_A);
+		bool transposeB = (mask & MatMulFlags::MATMUL_TRANSPOSE_B);
+
+		if(transposeA)
+		{
+			swapLastTwoDims(shapeA);
+			swapLastTwoDims(stridesA);
+		}
+		if (transposeB)
+		{
+			swapLastTwoDims(shapeB);
+			swapLastTwoDims(stridesB);
+		}
+		
 		bool promotedA = false, promotedB = false;
 
 		if (shapeA.size() == 1)
@@ -153,8 +174,7 @@ std::vector<Tensor> SubtractOperation::backward(const std::vector<Tensor>&,
 
 Tensor MatMulOperation::forward(const std::vector<Tensor>& inputs) const
 {
-	return matMul(inputs[0], inputs[1]);
-
+	return matMul(inputs[0], inputs[1], MatMulFlags::MATMUL_NO_TRANSPOSES);
 };
 std::vector<Tensor> MatMulOperation::backward(const std::vector<Tensor>& inputs,
 	const Tensor&,
@@ -162,16 +182,10 @@ std::vector<Tensor> MatMulOperation::backward(const std::vector<Tensor>& inputs,
 
 	std::vector<Tensor> result;
 	result.reserve(2);
-	// two copies?, optimize with a bitmask or something 
-	Tensor tranposeA = inputs[0];
-	tranposeA.transpose();
-	Tensor tranposeB = inputs[1];
-	tranposeB.transpose();
 
-
-	Tensor leftGrad = matMul(gradOutput, tranposeB);
+	Tensor leftGrad = matMul(gradOutput, inputs[1], MatMulFlags::MATMUL_TRANSPOSE_B);
 	result.push_back(leftGrad);
-	Tensor rightGrad = matMul(tranposeA, gradOutput);
+	Tensor rightGrad = matMul(inputs[0], gradOutput, MatMulFlags::MATMUL_TRANSPOSE_A);
 	result.push_back(rightGrad);
 
 	return result;

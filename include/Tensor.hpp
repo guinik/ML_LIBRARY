@@ -3,9 +3,17 @@
 #include <memory>
 
 
+struct AbstractTensor
+{
+	std::vector<size_t> shape;
+	std::vector<size_t> strides;
+	std::shared_ptr<std::vector<float>> data;
+	size_t dimensions;
+};
 
 
-struct Tensor
+
+struct Tensor : AbstractTensor
 {
 	Tensor() : dimensions(0) {};
 	Tensor(size_t  dimensionsInput, std::vector<size_t> shapes) : dimensions(dimensionsInput), shape(shapes)
@@ -42,8 +50,6 @@ struct Tensor
 	float& operator[](const std::vector<size_t>& inputDims) const;
 	Tensor operator+(const Tensor& B) const;
 	Tensor operator-(const Tensor& B) const;
-	Tensor operator*(const Tensor& B) const;
-
 	Tensor operator+(float scaleFactor) const;
 	Tensor operator*(float scaleFactor) const;
 	Tensor operator-(float scaleFactor) const;
