@@ -1,6 +1,8 @@
 #include "Node.hpp"
 #include <stdexcept>
 #include <cmath>
+#include <iostream>
+#include <string>
 namespace
 {
 	void swapLastTwoDims(std::vector<size_t>& A)
@@ -18,6 +20,27 @@ namespace
 		std::vector<size_t> stridesA = A.strides;
 		std::vector<size_t> stridesB = B.strides;
 
+		bool hasBatchA = (mask & MatMulFlags::MATMUL_HAS_BATCH_A);
+		bool vectorA = (mask & MatMulFlags::MATMUL_VECTOR_A);
+		bool vectorB = (mask & MatMulFlags::MATMUL_VECTOR_B);
+
+		bool promotedA = false, promotedB = false;
+
+		if (vectorA)
+		{
+			size_t insertPos = hasBatchA ? shapeA.size() - 1 : 0;
+			shapeA.insert(shapeA.begin() + insertPos, 1);
+			stridesA.insert(stridesA.begin() + insertPos, 0);
+			promotedA = true;
+		}
+		if (vectorB)
+		{
+			shapeB.push_back(1);
+			stridesB.push_back(0);
+			promotedB = true;
+		}
+
+
 		bool transposeA = (mask & MatMulFlags::MATMUL_TRANSPOSE_A);
 		bool transposeB = (mask & MatMulFlags::MATMUL_TRANSPOSE_B);
 
@@ -31,21 +54,6 @@ namespace
 			swapLastTwoDims(shapeB);
 			swapLastTwoDims(stridesB);
 		}
-		
-		bool promotedA = false, promotedB = false;
-
-		if (shapeA.size() == 1)
-		{
-			shapeA.insert(shapeA.begin(), 1);
-			promotedA = true;
-			stridesA.insert(stridesA.begin(), stridesA[0]);
-		}
-		if (shapeB.size() == 1)
-		{
-			shapeB.push_back(1);
-			promotedB = true;
-			stridesB.push_back(1);
-		}
 
 		if (shapeA.size() < 2 || shapeB.size() < 2)
 			throw std::runtime_error("Operands must have at least 1 dimension");
@@ -54,17 +62,30 @@ namespace
 		if (K != shapeB[shapeB.size() - 2])
 			throw std::runtime_error("Inner dimensions don't match for multiplication");
 
-		size_t batchDimsA = shapeA.size() - 2;
-		size_t batchDimsB = shapeB.size() - 2;
-		if (batchDimsA != batchDimsB)
-			throw std::runtime_error("Batch dimension count mismatch");
+		size_t batchRankA = shapeA.size() - 2;
+		size_t batchRankB = shapeB.size() - 2;
 
+		if (batchRankA < batchRankB)
+		{
+			size_t need = batchRankB - batchRankA;
+			shapeA.insert(shapeA.begin(), need, 1);
+			stridesA.insert(stridesA.begin(), need, 0);
+		}
+		else if (batchRankB < batchRankA)
+		{
+			size_t need = batchRankA - batchRankB;
+			shapeB.insert(shapeB.begin(), need, 1);
+			stridesB.insert(stridesB.begin(), need, 0);
+		}
+
+
+		size_t batchDimsA= shapeA.size() - 2;
 		std::vector<size_t> batchShape;
 		for (size_t i = 0; i < batchDimsA; i++)
 		{
-			if (shapeA[i] != shapeB[i])
+			if (shapeA[i] != shapeB[i] && shapeA[i] != 1 && shapeB[i] != 1)
 				throw std::runtime_error("Batch dimension sizes don't match");
-			batchShape.push_back(shapeA[i]);
+			batchShape.push_back(std::max(shapeA[i], shapeB[i]));
 		}
 
 		size_t M = shapeA[shapeA.size() - 2];
@@ -91,8 +112,8 @@ namespace
 
 		for (size_t b{ 0 }; b < batchCount; b++)
 		{
-			size_t baseA = b * M * K;
-			size_t baseB = b * K * N;
+			size_t baseA = b * stridesA[0];
+			size_t baseB = b * stridesB[0];
 			size_t baseR = b * M * N;
 			for (size_t m{ 0 }; m < M; m++)
 			{
@@ -122,6 +143,7 @@ namespace
 			result.strides.erase(result.strides.end() - 1);
 		};
 
+
 		return result;
 	}
 
@@ -134,18 +156,14 @@ Tensor AddOperation::forward(const std::vector<Tensor>& inputs) const
 {
 	return inputs[0] + inputs[1];	
 };
+
 std::vector<Tensor> AddOperation::backward(const std::vector<Tensor>&,
 	const Tensor&,
 	const Tensor& gradOutput) const {
 	
 	std::vector<Tensor> result;
 	result.reserve(2);
-
-	Tensor leftGrad = gradOutput;
-	result.push_back(leftGrad);
-	Tensor rightGrad = gradOutput;
-	result.push_back(rightGrad);
-
+	result = { gradOutput, gradOutput };
 	return result;
 };
 
@@ -174,7 +192,7 @@ std::vector<Tensor> SubtractOperation::backward(const std::vector<Tensor>&,
 
 Tensor MatMulOperation::forward(const std::vector<Tensor>& inputs) const
 {
-	return matMul(inputs[0], inputs[1], MatMulFlags::MATMUL_NO_TRANSPOSES);
+	return matMul(inputs[0], inputs[1], flags);
 };
 std::vector<Tensor> MatMulOperation::backward(const std::vector<Tensor>& inputs,
 	const Tensor&,
@@ -183,9 +201,13 @@ std::vector<Tensor> MatMulOperation::backward(const std::vector<Tensor>& inputs,
 	std::vector<Tensor> result;
 	result.reserve(2);
 
-	Tensor leftGrad = matMul(gradOutput, inputs[1], MatMulFlags::MATMUL_TRANSPOSE_B);
+	// inputs[0]=weights [outDim,inDim], inputs[1]=activations [batch,inDim], gradOutput [batch,outDim]
+	// dL/dW = grad^T @ X  →  [outDim,batch] @ [batch,inDim] = [outDim,inDim]
+	Tensor leftGrad = matMul(gradOutput, inputs[1], MatMulFlags::MATMUL_TRANSPOSE_A);
 	result.push_back(leftGrad);
-	Tensor rightGrad = matMul(inputs[0], gradOutput, MatMulFlags::MATMUL_TRANSPOSE_A);
+
+	// dL/dX = grad @ W  →  [batch,outDim] @ [outDim,inDim] = [batch,inDim]
+	Tensor rightGrad = matMul(gradOutput, inputs[0], MatMulFlags::MATMUL_NO_TRANSPOSES);
 	result.push_back(rightGrad);
 
 	return result;
@@ -279,3 +301,15 @@ std::vector<Tensor> SigmoidOperation::backward(const std::vector<Tensor>& inputs
 	result.push_back(resultLeft);
 	return result;
 };
+
+Tensor unbroadcastGrad(const Tensor& grad, const std::vector<size_t>& targetShape)
+{
+	std::vector<size_t> gradShape = grad.shape;
+	size_t extraDims = gradShape.size() - targetShape.size();
+	Tensor reduced = grad;
+	for (size_t d = 0; d < extraDims; d++)
+	{
+		reduced = reduced.sumAxis(0);
+	}
+	return reduced;
+}

@@ -11,7 +11,6 @@ struct Parameter{
 	Tensor grad;
 
 	void clearGradients() {
-		if (value.data)
-			grad = Tensor(value.dimensions, value.shape);
+		grad = Tensor();
 	};
 };

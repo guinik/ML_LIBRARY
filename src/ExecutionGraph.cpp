@@ -1,6 +1,7 @@
 #include "ExecutionGraph.hpp"
 #include <unordered_set>
 #include <stdexcept>
+#include <iostream>
 namespace
 {
 	void dfsNode( std::shared_ptr<Node> node, std::unordered_set<std::shared_ptr<Node>>& doneSet,

@@ -5,12 +5,12 @@
 
 struct AbstractTensor
 {
+	virtual ~AbstractTensor() = default;
 	std::vector<size_t> shape;
 	std::vector<size_t> strides;
 	std::shared_ptr<std::vector<float>> data;
 	size_t dimensions;
 };
-
 
 
 struct Tensor : AbstractTensor
@@ -38,10 +38,10 @@ struct Tensor : AbstractTensor
 	{
 		if (this != &other)
 		{
-			dimensions = other.dimensions;
 			shape      = other.shape;
 			strides    = other.strides;
 			data       = other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr;
+			dimensions = other.dimensions;
 		}
 		return *this;
 	}
@@ -64,4 +64,9 @@ struct Tensor : AbstractTensor
 	void fillValues(float value);
 	Tensor square() const;
 	void randomize(float scale);
+	Tensor sumAxis(size_t dim) const;
+	Tensor sumAxisKeepDim(size_t axis) const;
 };
+
+
+Tensor unbroadcastGrad(const Tensor& grad, const std::vector<size_t>& targetShape);

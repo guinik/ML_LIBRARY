@@ -1,5 +1,6 @@
 #include "Tensor.hpp"
 #include "MiniModel.hpp"
+#include "Layers.hpp"
 #include <vector>
 #include <iostream>
 #include <cstdlib>
@@ -36,13 +37,15 @@ int main()
         for (size_t i{ 0 }; i < inputs.size(); i++)
         {
             
-            Tensor inputTensor(2, { 1, 1 });
+            Tensor inputTensor(2, { 2, 1 });
             (*inputTensor.data)[0] = inputs[i];
+            (*inputTensor.data)[1] = inputs[(i + 1) % inputs.size()];
 
-            Tensor targetTensor(2, { 1, 1 });
+            Tensor targetTensor(2, { 2, 1 });
             (*targetTensor.data)[0] = outputs[i];
+            (*targetTensor.data)[1] = outputs[(i + 1) % outputs.size()];
 
-            model.forward(inputTensor, targetTensor);
+            auto result = model.forward(inputTensor, targetTensor);
             model.cleanGradients();
             model.backward();
             if (epoch < 5000)

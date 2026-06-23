@@ -1,12 +1,16 @@
 #pragma once
 #include <array>
+#include "Tensor.hpp"
 #include "Parameter.hpp"
-
 enum MatMulFlags : uint16_t
 {
 	MATMUL_NO_TRANSPOSES = 0,
 	MATMUL_TRANSPOSE_A = 1 << 0,
-	MATMUL_TRANSPOSE_B = 1 << 1
+	MATMUL_TRANSPOSE_B = 1 << 1,
+	MATMUL_HAS_BATCH_A = 1 << 2,
+	MATMUL_HAS_BATCH_B = 1 << 3,
+	MATMUL_VECTOR_A = 1 << 4,
+	MATMUL_VECTOR_B = 1 << 5
 };
 
 
@@ -18,6 +22,7 @@ struct Operation
 		const Tensor& outputs,
 		const Tensor& gradOutput) const = 0;
 };
+
 
 // node should be at most binary. 
 struct Node
@@ -55,7 +60,15 @@ struct Node
 		for (size_t i{0}; i < children.size(); i++)
 		{
 			if (!children[i]) continue;
-			children[i]->param.grad = children[i]->param.grad + gradResult[i];
+			if(children[i]->param.grad.dimensions == 0)
+			{
+				children[i]->param.grad = gradResult[i];
+			}
+			else
+			{
+				children[i]->param.grad = children[i]->param.grad + gradResult[i];
+
+			}
 		}
 
 	};
@@ -82,6 +95,8 @@ struct SubtractOperation : Operation
 
 struct MatMulOperation : Operation
 {
+	uint16_t flags;
+	MatMulOperation(uint16_t inputFlags = MatMulFlags::MATMUL_NO_TRANSPOSES) : flags(inputFlags) {}
 	Tensor forward(const std::vector<Tensor>& inputs) const override;
 	std::vector<Tensor> backward(
 		const std::vector<Tensor>& inputs,

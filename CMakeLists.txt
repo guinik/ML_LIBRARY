@@ -13,6 +13,7 @@ set(ML_SOURCES
 	src/Optimizer.cpp
 	src/ExecutionGraph.cpp
 	src/Node.cpp
+	src/Layers.cpp
 )
 
 set(ML_HEADERS
@@ -22,6 +23,7 @@ set(ML_HEADERS
 	include/Optimizer.hpp
 	include/ExecutionGraph.hpp
 	include/Node.hpp
+	include/Layers.hpp
 )
 
 

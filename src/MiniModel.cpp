@@ -1,5 +1,6 @@
 #include "Tensor.hpp"
 #include "MiniModel.hpp"
+#include "Layers.hpp"
 #include <stdexcept>
 #include <cmath>
 MiniModel::MiniModel(std::vector<size_t> layerSizes)
@@ -13,38 +14,26 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 		size_t inDim = layerSizes[layer];
 		size_t outDim = layerSizes[layer + 1];
 
-		// weight: (outDim, inDim) so weight * input -> (outDim, 1)
-		std::shared_ptr<Node> weightNode = std::make_shared<Node>();
-		weightNode->param.value = Tensor(2, { outDim, inDim });
-		weightNode->param.value.randomize(1.0f / std::sqrt((float)inDim));
-		_parameterList.push_back(weightNode);
-
-
-		std::shared_ptr<Node> matmulNode = std::make_shared<Node>(std::make_shared<MatMulOperation>());
-		matmulNode->children = { weightNode, currentNode };
-
-		// bias: (outDim, 1)
-		std::shared_ptr<Node> biasNode = std::make_shared<Node>();
-		biasNode->param.value = Tensor(2, { outDim, 1 });
-		biasNode->param.value.randomize(1.0f / std::sqrt((float)inDim));
-		_parameterList.push_back(biasNode);
-
-
-		std::shared_ptr<Node> addNode = std::make_shared<Node>(std::make_shared<AddOperation>());
-		addNode->children = { matmulNode, biasNode };
-
 		bool isLastLayer = (layer + 2 == layerSizes.size());
 		if (!isLastLayer)
 		{
-			std::shared_ptr<Node> reluNode = std::make_shared<Node>(std::make_shared<SigmoidOperation>());
-			reluNode->children = { addNode, nullptr };
-			currentNode = reluNode;
-			
+			auto denseLayer = DenseLayer(outDim, inDim, Activation::SIGMOID);
+			currentNode = denseLayer.forward({currentNode});
+			for (auto& parameter : denseLayer.parameters)
+			{
+				_parameterList.push_back(parameter);
+			}
 		}
 		else
 		{
-			currentNode = addNode;
+			auto denseLayer = DenseLayer(outDim, inDim, Activation::NONE);
+			currentNode = denseLayer.forward({ currentNode });
+			for (auto& parameter : denseLayer.parameters)
+			{
+				_parameterList.push_back(parameter);
+			}
 		}
+		
 	}
 
 	_resultNode = currentNode;
