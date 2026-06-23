@@ -28,7 +28,7 @@ int main()
     }
 
     float learningRate = 0.005f;
-    int epochs = 20000;
+    int epochs = 50000;
 
     for (int epoch{ 0 }; epoch < epochs; epoch++)
     {
@@ -53,9 +53,13 @@ int main()
             {
                 model.applyGradient(learningRate/10);
             }
-            else
+            else if(epoch < 25000)
             {
                 model.applyGradient(learningRate/20);
+            }
+            else
+            {
+                 model.applyGradient(learningRate / 50);
             }
 
             totalLoss += (*model._lossNode->param.value.data)[0];
