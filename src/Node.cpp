@@ -157,13 +157,14 @@ Tensor AddOperation::forward(const std::vector<Tensor>& inputs) const
 	return inputs[0] + inputs[1];	
 };
 
-std::vector<Tensor> AddOperation::backward(const std::vector<Tensor>&,
+std::vector<Tensor> AddOperation::backward(const std::vector<Tensor>& inputs,
 	const Tensor&,
 	const Tensor& gradOutput) const {
-	
+
 	std::vector<Tensor> result;
 	result.reserve(2);
-	result = { gradOutput, gradOutput };
+	result.push_back(unbroadcastGrad(gradOutput, inputs[0].shape));
+	result.push_back(unbroadcastGrad(gradOutput, inputs[1].shape));
 	return result;
 };
 
