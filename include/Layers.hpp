@@ -28,3 +28,17 @@ struct DenseLayer : Layer
 	Activation activation;
 
 };
+
+struct SingleHeadAttention : Layer
+{
+
+	SingleHeadAttention(size_t outDim, size_t inDim, Activation inputActivation);
+	std::shared_ptr<Node> forward(const std::vector<std::shared_ptr<Node>>& inputsNodes) override;
+
+	std::shared_ptr<Node> queryWeights;
+	std::shared_ptr<Node> keyWeights;
+	std::shared_ptr<Node> valueWeights;
+	Activation activation;
+
+
+};

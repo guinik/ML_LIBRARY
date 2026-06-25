@@ -126,3 +126,12 @@ struct SigmoidOperation : Operation
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 };
+
+struct SoftmaxOperation : Operation
+{
+	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<Tensor>& inputs,
+		const Tensor&,
+		const Tensor& gradOutput) const override;
+};

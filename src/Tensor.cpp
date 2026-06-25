@@ -113,6 +113,21 @@ Tensor Tensor::operator-(const Tensor& B) const
 	return result;
 }
 
+Tensor Tensor::operator*(const Tensor& other) const
+{
+	Tensor result(this->dimensions, this->shape);
+	const std::vector<float>& thisData = *(this->data);
+	const std::vector<float>& otherData = *(other.data);
+	std::vector<float>& dstData = *(result.data);
+	size_t n = this->data->size();
+	for (size_t i{0}; i < n; i++)
+	{
+		dstData[i] = thisData[i] * otherData[i];
+	}
+	return result;
+}
+
+
 Tensor Tensor::operator+(float offset) const
 {
 	Tensor result = *this;

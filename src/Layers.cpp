@@ -72,3 +72,28 @@ std::shared_ptr<Node> DenseLayer::forward(const std::vector<std::shared_ptr<Node
 	}
 
 };
+
+
+
+
+SingleHeadAttention::SingleHeadAttention(size_t outDim, size_t inDim, Activation inputActivation)
+{
+	size_t numDimensionsWeight{ 2 };
+	queryWeights = std::make_shared<Node>();
+	keyWeights = std::make_shared<Node>();
+	valueWeights = std::make_shared<Node>();
+	queryWeights->param.value = Tensor(numDimensionsWeight, { outDim, inDim });
+	keyWeights->param.value = Tensor(numDimensionsWeight, { outDim, inDim });
+	valueWeights->param.value = Tensor(numDimensionsWeight, { outDim, inDim });
+
+
+	queryWeights->param.value.randomize(1.0f / std::sqrt((float)inDim));
+	keyWeights->param.value.randomize(1.0f / std::sqrt((float)inDim));
+	valueWeights->param.value.randomize(1.0f / std::sqrt((float)inDim));
+
+
+
+	parameters = { queryWeights, keyWeights, valueWeights };
+	activation = inputActivation;
+
+}

@@ -50,6 +50,7 @@ struct Tensor : AbstractTensor
 	float& operator[](const std::vector<size_t>& inputDims) const;
 	Tensor operator+(const Tensor& B) const;
 	Tensor operator-(const Tensor& B) const;
+	Tensor operator*(const Tensor& B) const;
 	Tensor operator+(float scaleFactor) const;
 	Tensor operator*(float scaleFactor) const;
 	Tensor operator-(float scaleFactor) const;

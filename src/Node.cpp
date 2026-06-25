@@ -266,6 +266,63 @@ std::vector<Tensor> SigmoidOperation::backward(const std::vector<Tensor>& inputs
 	return result;
 };
 
+
+Tensor SoftmaxOperation::forward(const std::vector<Tensor>& inputs) const
+{
+	Tensor leftTensor = inputs[0];
+	Tensor result(leftTensor.dimensions, leftTensor.shape);
+	const float* src = leftTensor.data->data();
+	float* dst = result.data->data();
+	// lets assume it has a batch dimension, we could pass a flag
+	size_t n = leftTensor.strides[1];
+	size_t batchDim = leftTensor.shape[0];
+	size_t batchStride = leftTensor.strides[0];
+	// TODO normalize softmax this is prone to overflow
+
+	std::vector<double> accumulatedSoftmax(batchDim, 0.0);
+	for (size_t b{ 0 }; b < leftTensor.shape[0]; b++)
+	{
+		size_t batchOffset = b * batchStride;
+
+
+		float maxVal = src[batchOffset];
+		for (size_t i{ 1 }; i < n; i++)
+		{
+			maxVal = std::max(maxVal, src[batchOffset + i]);
+		}
+		for (size_t i{ 0 }; i < n; i++)
+		{
+			float e = std::exp(src[batchOffset + i]) - maxVal;
+			accumulatedSoftmax[b] += e;
+			dst[batchOffset + i] = e;
+		}
+	}
+	for (size_t b{ 0 }; b < leftTensor.shape[0]; b++)
+	{
+		size_t batchOffset = b * batchStride;
+		for (size_t i{ 0 }; i < n; i++)
+		{
+
+			dst[batchOffset + i] /= accumulatedSoftmax[b];
+		}
+	}
+	return result;
+
+};
+
+std::vector<Tensor> SoftmaxOperation::backward(const std::vector<Tensor>& inputs,
+	const Tensor& output,
+	const Tensor& gradOutput) const {
+	std::vector<Tensor> result;
+	result.reserve(1);
+	Tensor weighted = output * gradOutput;
+	Tensor dotProduct = weighted.sumAxis(weighted.dimensions-1);
+	Tensor gradInput = output * (gradOutput - dotProduct);
+	result.push_back(gradInput);
+	return result;
+};
+
+
 Tensor unbroadcastGrad(const Tensor& grad, const std::vector<size_t>& targetShape)
 {
 	std::vector<size_t> gradShape = grad.shape;
