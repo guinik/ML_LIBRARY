@@ -1,86 +1,106 @@
 #include "Tensor.hpp"
-#include "MiniModel.hpp"
-#include "Layers.hpp"
+#include "TransformerMiniModel.hpp"
 #include <vector>
 #include <iostream>
 #include <cstdlib>
 
-float stepFunction(float x)
+static const size_t VOCAB_SIZE = 6;
+static const size_t SEQ_LEN   = 4;
+
+Tensor oneHot(const std::vector<int>& tokens)
 {
-    if (x < 2.0f)  return 0.0f;
-    if (x < 4.0f)  return 1.0f;
-    if (x < 6.0f)  return 0.3f;
-    if (x < 8.0f)  return 0.8f;
-    return 0.1f;
+    Tensor t(2, {SEQ_LEN, VOCAB_SIZE});
+    t.fillValues(0.0f);
+    for (size_t i = 0; i < tokens.size(); i++)
+    {
+        (*t.data)[i * VOCAB_SIZE + tokens[i]] = 1.0f;
+    }
+    return t;
+}
+
+int argmax(const float* row, size_t n)
+{
+    int best = 0;
+    for (size_t i = 1; i < n; i++)
+    {
+        if (row[i] > row[best]) best = (int)i;
+    }
+    return best;
 }
 
 int main()
 {
-    srand(4242);
-    MiniModel model({ 1, 64, 32, 1 }); // input dim 1, two hidden layers of width 8, output dim 1
+    srand(42);
 
-    // training data: step function, 0 before x=5, 1 after
-    std::vector<float> inputs;
-    std::vector<float> outputs;
-    for (float x = 0.0f; x <= 10.0f; x += 0.1f)
-    {
-        inputs.push_back(x);
-        outputs.push_back(stepFunction(x));
-    }
+    const char* tokenName[] = {"A","B","C","D","E","F"};
 
-    float learningRate = 0.005f;
-    int epochs = 50000;
+    // Two independent 3-cycles: {A,B,C} and {D,E,F}.
+    std::vector<std::vector<int>> inputs = {
+        {0,1,2,0},  {1,2,0,1},  {2,0,1,2},
+        {3,4,5,3},  {4,5,3,4},  {5,3,4,5},
+    };
+    std::vector<std::vector<int>> targets = {
+        {1,2,0,1},  {2,0,1,2},  {0,1,2,0},
+        {4,5,3,4},  {5,3,4,5},  {3,4,5,3},
+    };
 
-    for (int epoch{ 0 }; epoch < epochs; epoch++)
+    TransformerMiniModel model(VOCAB_SIZE, 16, 16, 2, /*causal=*/true);
+
+    const int epochs = 5000;
+    for (int epoch = 0; epoch < epochs; epoch++)
     {
         float totalLoss = 0.0f;
-        for (size_t i{ 0 }; i < inputs.size(); i++)
+        for (size_t i = 0; i < inputs.size(); i++)
         {
-            
-            Tensor inputTensor(2, { 2, 1 });
-            (*inputTensor.data)[0] = inputs[i];
-            (*inputTensor.data)[1] = inputs[(i + 1) % inputs.size()];
+            Tensor inp = oneHot(inputs[i]);
+            Tensor tgt = oneHot(targets[i]);
 
-            Tensor targetTensor(2, { 2, 1 });
-            (*targetTensor.data)[0] = outputs[i];
-            (*targetTensor.data)[1] = outputs[(i + 1) % outputs.size()];
-
-            auto result = model.forward(inputTensor, targetTensor);
+            model.forward(inp, tgt);
             model.cleanGradients();
             model.backward();
-            if (epoch < 5000)
-            {
-                model.applyGradient(learningRate);
-            }
-            else if(epoch < 10000)
-            {
-                model.applyGradient(learningRate/10);
-            }
-            else if(epoch < 25000)
-            {
-                model.applyGradient(learningRate/20);
-            }
-            else
-            {
-                 model.applyGradient(learningRate / 50);
-            }
 
-            totalLoss += (*model._lossNode->param.value.data)[0];
+            float lr = (epoch < 2000) ? 0.005f : 0.001f;
+            model.applyGradient(lr);
+
+            for (float v : *model._lossNode->param.value.data)
+            {
+                totalLoss += v;
+            }
         }
 
-        if (epoch % 100 == 0)
-            std::cout << "Epoch " << epoch << "  Avg Loss: " << (totalLoss / inputs.size()) << std::endl;
+        if (epoch % 500 == 0)
+        {
+            std::cout << "Epoch " << epoch << "  Loss: " << totalLoss << "\n";
+        }
     }
 
-    // see what it learned
-    for (float x = 0.0f; x <= 10.0f; x += 0.5f)
+    std::cout << "\n--- Autoregressive generation ---\n";
+    std::vector<int> seeds = {0, 3};
+    for (int seed : seeds)
     {
-        Tensor inputTensor(2, { 1, 1 });
-        (*inputTensor.data)[0] = x;
-        Tensor dummyTarget(2, { 1, 1 });
-        Tensor predicted = model.forward(inputTensor, dummyTarget);
-        std::cout << "x = " << x << "  target = " << stepFunction(x)
-            << "  predicted = " << (*predicted.data)[0] << std::endl;
+        std::vector<int> generated = {seed};
+        Tensor genInput(2, {SEQ_LEN, VOCAB_SIZE});
+        genInput.fillValues(0.0f);
+        (*genInput.data)[seed] = 1.0f;
+
+        Tensor dummy(2, {SEQ_LEN, VOCAB_SIZE});
+        dummy.fillValues(0.0f);
+
+        for (size_t step = 0; step < SEQ_LEN - 1; step++)
+        {
+            Tensor out = model.forward(genInput, dummy);
+            const float* row = out.data->data() + step * VOCAB_SIZE;
+            int next = argmax(row, VOCAB_SIZE);
+            generated.push_back(next);
+            (*genInput.data)[(step + 1) * VOCAB_SIZE + next] = 1.0f;
+        }
+
+        std::cout << "Seed " << tokenName[seed] << " -> ";
+        for (int t : generated)
+        {
+            std::cout << tokenName[t] << " ";
+        }
+        std::cout << "\n";
     }
 
     return 0;

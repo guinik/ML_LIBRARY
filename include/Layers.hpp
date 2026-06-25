@@ -3,6 +3,8 @@
 #include "Node.hpp"
 #include <memory>
 
+std::shared_ptr<Node> operator+(std::shared_ptr<Node> a, std::shared_ptr<Node> b);
+
 
 struct Layer
 {
@@ -29,16 +31,27 @@ struct DenseLayer : Layer
 
 };
 
+struct LayerNormLayer : Layer
+{
+	LayerNormLayer(size_t dim, float eps = 1e-5f);
+	std::shared_ptr<Node> forward(const std::vector<std::shared_ptr<Node>>& inputsNodes) override;
+
+	std::shared_ptr<Node> gamma;
+	std::shared_ptr<Node> beta;
+	float eps;
+};
+
 struct SingleHeadAttention : Layer
 {
 
-	SingleHeadAttention(size_t outDim, size_t inDim, Activation inputActivation);
+	SingleHeadAttention(size_t d_model, size_t d_k, bool causal = false);
 	std::shared_ptr<Node> forward(const std::vector<std::shared_ptr<Node>>& inputsNodes) override;
 
 	std::shared_ptr<Node> queryWeights;
 	std::shared_ptr<Node> keyWeights;
 	std::shared_ptr<Node> valueWeights;
-	Activation activation;
-
+	std::shared_ptr<Node> outputWeights;
+	size_t internalDim;
+	bool causal;
 
 };

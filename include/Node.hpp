@@ -89,6 +89,17 @@ struct SubtractOperation : Operation
 		const Tensor& gradOutput) const override;
 };
 
+struct ScaleOperation : Operation
+{
+	float scaleFactor;
+	ScaleOperation(float inputFactor) : scaleFactor(inputFactor) {};
+	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<Tensor>& inputs,
+		const Tensor&,
+		const Tensor& gradOutput) const override;
+};
+
 struct MatMulOperation : Operation
 {
 	uint16_t flags;
@@ -133,5 +144,34 @@ struct SoftmaxOperation : Operation
 	std::vector<Tensor> backward(
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
+		const Tensor& gradOutput) const override;
+};
+
+struct CausalMaskOperation : Operation
+{
+	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<Tensor>& inputs,
+		const Tensor&,
+		const Tensor& gradOutput) const override;
+};
+
+struct MultiplyOperation : Operation
+{
+	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<Tensor>& inputs,
+		const Tensor&,
+		const Tensor& gradOutput) const override;
+};
+
+struct LayerNormOperation : Operation
+{
+	float eps;
+	LayerNormOperation(float inputEps = 1e-5f) : eps(inputEps) {}
+	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<Tensor>& inputs,
+		const Tensor& output,
 		const Tensor& gradOutput) const override;
 };

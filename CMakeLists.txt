@@ -10,6 +10,7 @@ set(ML_SOURCES
 	src/Parameter.cpp
 	src/Tensor.cpp
 	src/MiniModel.cpp
+	src/TransformerMiniModel.cpp
 	src/Optimizer.cpp
 	src/ExecutionGraph.cpp
 	src/Node.cpp
@@ -20,6 +21,7 @@ set(ML_HEADERS
 	include/Parameter.hpp
 	include/Tensor.hpp
 	include/MiniModel.hpp
+	include/TransformerMiniModel.hpp
 	include/Optimizer.hpp
 	include/ExecutionGraph.hpp
 	include/Node.hpp

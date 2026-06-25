@@ -9,7 +9,7 @@ struct AbstractTensor
 	std::vector<size_t> shape;
 	std::vector<size_t> strides;
 	std::shared_ptr<std::vector<float>> data;
-	size_t dimensions;
+	size_t dimensions{};
 };
 
 
