@@ -13,35 +13,11 @@ namespace
 	Tensor matMul(const Tensor& A, const Tensor& B, uint16_t mask)
 	{
 
-		// this actually computes B*A^T when it looks liek W*X however, to make 
-		// dimensions really work we do batch addition,vector addition which
-		// might not be necessary at ALL, we effectively are doing X*W^T which is convention 
-		std::vector<size_t> shapeA = A.shape;
+			std::vector<size_t> shapeA = A.shape;
 		std::vector<size_t> shapeB = B.shape;
 
 		std::vector<size_t> stridesA = A.strides;
 		std::vector<size_t> stridesB = B.strides;
-
-		bool hasBatchA = (mask & MatMulFlags::MATMUL_HAS_BATCH_A);
-		bool vectorA = (mask & MatMulFlags::MATMUL_VECTOR_A);
-		bool vectorB = (mask & MatMulFlags::MATMUL_VECTOR_B);
-
-		bool promotedA = false, promotedB = false;
-
-		if (vectorA)
-		{
-			size_t insertPos = hasBatchA ? shapeA.size() - 1 : 0;
-			shapeA.insert(shapeA.begin() + insertPos, 1);
-			stridesA.insert(stridesA.begin() + insertPos, 0);
-			promotedA = true;
-		}
-		if (vectorB)
-		{
-			shapeB.push_back(1);
-			stridesB.push_back(0);
-			promotedB = true;
-		}
-
 
 		bool transposeA = (mask & MatMulFlags::MATMUL_TRANSPOSE_A);
 		bool transposeB = (mask & MatMulFlags::MATMUL_TRANSPOSE_B);
@@ -134,18 +110,6 @@ namespace
 			}
 		}
 
-		if (promotedA)
-		{
-			result.shape.erase(result.shape.end() - 2);
-			result.strides.erase(result.strides.end() - 2);
-		};
-		if (promotedB)
-		{
-			result.shape.erase(result.shape.end() - 1);
-			result.strides.erase(result.strides.end() - 1);
-		};
-
-
 		return result;
 	}
 
@@ -204,10 +168,10 @@ std::vector<Tensor> MatMulOperation::backward(const std::vector<Tensor>& inputs,
 	std::vector<Tensor> result;
 	result.reserve(2);
 
-	Tensor leftGrad = matMul(gradOutput, inputs[1], MatMulFlags::MATMUL_TRANSPOSE_A);
+	Tensor leftGrad = matMul(gradOutput, inputs[1], MatMulFlags::MATMUL_NO_TRANSPOSES);
 	result.push_back(leftGrad);
 
-	Tensor rightGrad = matMul(gradOutput, inputs[0], MatMulFlags::MATMUL_NO_TRANSPOSES);
+	Tensor rightGrad = matMul(gradOutput, inputs[0], MatMulFlags::MATMUL_TRANSPOSE_A);
 	result.push_back(rightGrad);
 
 	return result;

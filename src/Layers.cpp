@@ -21,7 +21,7 @@ std::shared_ptr<Node> operator+(std::shared_ptr<Node> a, std::shared_ptr<Node> b
 
 std::shared_ptr<Node> matMul(std::shared_ptr<Node> a, std::shared_ptr<Node> b)
 {
-	return makeNode(std::make_shared<MatMulOperation>(static_cast<uint16_t>(MatMulFlags::MATMUL_HAS_BATCH_B | MatMulFlags::MATMUL_VECTOR_B)), std::move(a), std::move(b));
+	return makeNode(std::make_shared<MatMulOperation>(static_cast<uint16_t>(MatMulFlags::MATMUL_TRANSPOSE_B)), std::move(a), std::move(b));
 }
 
 std::shared_ptr<Node> relu(std::shared_ptr<Node> a)
@@ -58,15 +58,15 @@ std::shared_ptr<Node> DenseLayer::forward(const std::vector<std::shared_ptr<Node
 	{
 		case Activation::RELU:
 		{
-			return relu(matMul(weights, inputsNodes[0]) + bias);
+			return relu(matMul(inputsNodes[0], weights) + bias);
 		}
 		case Activation::SIGMOID:
 		{
-			return sigmoid(matMul(weights, inputsNodes[0]) + bias);
+			return sigmoid(matMul(inputsNodes[0], weights) + bias);
 		}
 		default:
 		{
-			return matMul(weights, inputsNodes[0]) + bias;
+			return matMul(inputsNodes[0], weights) + bias;
 
 		}
 	}

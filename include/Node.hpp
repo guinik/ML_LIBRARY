@@ -7,10 +7,6 @@ enum MatMulFlags : uint16_t
 	MATMUL_NO_TRANSPOSES = 0,
 	MATMUL_TRANSPOSE_A = 1 << 0,
 	MATMUL_TRANSPOSE_B = 1 << 1,
-	MATMUL_HAS_BATCH_A = 1 << 2,
-	MATMUL_HAS_BATCH_B = 1 << 3,
-	MATMUL_VECTOR_A = 1 << 4,
-	MATMUL_VECTOR_B = 1 << 5
 };
 
 
