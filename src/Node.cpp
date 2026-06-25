@@ -13,7 +13,9 @@ namespace
 	Tensor matMul(const Tensor& A, const Tensor& B, uint16_t mask)
 	{
 
-
+		// this actually computes B*A^T when it looks liek W*X however, to make 
+		// dimensions really work we do batch addition,vector addition which
+		// might not be necessary at ALL, we effectively are doing X*W^T which is convention 
 		std::vector<size_t> shapeA = A.shape;
 		std::vector<size_t> shapeB = B.shape;
 
@@ -202,12 +204,9 @@ std::vector<Tensor> MatMulOperation::backward(const std::vector<Tensor>& inputs,
 	std::vector<Tensor> result;
 	result.reserve(2);
 
-	// inputs[0]=weights [outDim,inDim], inputs[1]=activations [batch,inDim], gradOutput [batch,outDim]
-	// dL/dW = grad^T @ X  →  [outDim,batch] @ [batch,inDim] = [outDim,inDim]
 	Tensor leftGrad = matMul(gradOutput, inputs[1], MatMulFlags::MATMUL_TRANSPOSE_A);
 	result.push_back(leftGrad);
 
-	// dL/dX = grad @ W  →  [batch,outDim] @ [outDim,inDim] = [batch,inDim]
 	Tensor rightGrad = matMul(gradOutput, inputs[0], MatMulFlags::MATMUL_NO_TRANSPOSES);
 	result.push_back(rightGrad);
 
