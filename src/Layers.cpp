@@ -62,7 +62,7 @@ LayerNormLayer::LayerNormLayer(size_t dim, float inputEps) : eps(inputEps)
 	beta->param.value  = Tensor(1, {dim});
 	gamma->param.value.fillValues(1.0f);
 	beta->param.value.fillValues(0.0f);
-	parameters = {gamma, beta};
+	parameters = {{"gamma", gamma}, {"beta", beta}};
 }
 
 std::shared_ptr<Node> LayerNormLayer::forward(const std::vector<std::shared_ptr<Node>>& inputsNodes)
@@ -84,7 +84,7 @@ DenseLayer::DenseLayer(size_t outDim, size_t inDim, Activation inputActivation)
 
 	weights->param.value.randomize(1.0f / std::sqrt((float)inDim));
 	bias->param.value.randomize(1.0f / std::sqrt((float)inDim));
-	parameters = { weights, bias };
+	parameters = {{"weight", weights}, {"bias", bias}};
 	activation = inputActivation;
 
 }
@@ -133,7 +133,7 @@ SingleHeadAttention::SingleHeadAttention(size_t d_model, size_t d_k, bool inputC
 
 	internalDim = d_k;
 	causal = inputCausal;
-	parameters = { queryWeights, keyWeights, valueWeights, outputWeights };
+	parameters = {{"wq", queryWeights}, {"wk", keyWeights}, {"wv", valueWeights}, {"wo", outputWeights}};
 }
 
 std::shared_ptr<Node> SingleHeadAttention::forward(const std::vector<std::shared_ptr<Node>>& inputsNodes)

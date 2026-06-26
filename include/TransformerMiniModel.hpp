@@ -4,6 +4,8 @@
 #include "Optimizer.hpp"
 #include "Layers.hpp"
 #include <optional>
+#include <string>
+#include <map>
 
 struct TransformerMiniModel
 {
@@ -19,10 +21,18 @@ struct TransformerMiniModel
     void applyGradient(float lr = 0.001f);
     void cleanGradients();
 
+    void save(const std::string& path) const;
+    void load(const std::string& path);
+    std::map<std::string, Tensor> stateDict() const;
+
 private:
     void dfsCleanGradients(std::shared_ptr<Node> node);
+    void registerLayer(const std::string& name, Layer& layer);
+    void registerLayer(Layer& layer);
 
     std::optional<ExecutionGraph> _executionGraph;
     std::vector<std::shared_ptr<Node>> _parameterList;
+    std::vector<std::pair<std::string, std::shared_ptr<Node>>> _namedParams;
+    std::map<std::string, int> _layerTypeCounts;
     std::optional<AdamOptimizer> _optimizer;
 };

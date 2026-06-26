@@ -15,6 +15,7 @@ set(ML_SOURCES
 	src/ExecutionGraph.cpp
 	src/Node.cpp
 	src/Layers.cpp
+	src/Serialization.cpp
 )
 
 set(ML_HEADERS
@@ -26,6 +27,7 @@ set(ML_HEADERS
 	include/ExecutionGraph.hpp
 	include/Node.hpp
 	include/Layers.hpp
+	include/Serialization.hpp
 )
 
 

@@ -23,7 +23,10 @@ int argmax(const float* row, size_t n)
     int best = 0;
     for (size_t i = 1; i < n; i++)
     {
-        if (row[i] > row[best]) best = (int)i;
+        if (row[i] > row[best])
+        {
+            best = (int)i;
+        }
     }
     return best;
 }
@@ -34,7 +37,6 @@ int main()
 
     const char* tokenName[] = {"A","B","C","D","E","F"};
 
-    // Two independent 3-cycles: {A,B,C} and {D,E,F}.
     std::vector<std::vector<int>> inputs = {
         {0,1,2,0},  {1,2,0,1},  {2,0,1,2},
         {3,4,5,3},  {4,5,3,4},  {5,3,4,5},
@@ -74,34 +76,49 @@ int main()
         }
     }
 
-    std::cout << "\n--- Autoregressive generation ---\n";
     std::vector<int> seeds = {0, 3};
-    for (int seed : seeds)
+
+    auto generate = [&](TransformerMiniModel& m, const char* label)
     {
-        std::vector<int> generated = {seed};
-        Tensor genInput(2, {SEQ_LEN, VOCAB_SIZE});
-        genInput.fillValues(0.0f);
-        (*genInput.data)[seed] = 1.0f;
-
-        Tensor dummy(2, {SEQ_LEN, VOCAB_SIZE});
-        dummy.fillValues(0.0f);
-
-        for (size_t step = 0; step < SEQ_LEN - 1; step++)
+        std::cout << "\n--- " << label << " ---\n";
+        for (int seed : seeds)
         {
-            Tensor out = model.forward(genInput, dummy);
-            const float* row = out.data->data() + step * VOCAB_SIZE;
-            int next = argmax(row, VOCAB_SIZE);
-            generated.push_back(next);
-            (*genInput.data)[(step + 1) * VOCAB_SIZE + next] = 1.0f;
-        }
+            std::vector<int> generated = {seed};
+            Tensor genInput(2, {SEQ_LEN, VOCAB_SIZE});
+            genInput.fillValues(0.0f);
+            (*genInput.data)[seed] = 1.0f;
 
-        std::cout << "Seed " << tokenName[seed] << " -> ";
-        for (int t : generated)
-        {
-            std::cout << tokenName[t] << " ";
+            Tensor dummy(2, {SEQ_LEN, VOCAB_SIZE});
+            dummy.fillValues(0.0f);
+
+            for (size_t step = 0; step < SEQ_LEN - 1; step++)
+            {
+                Tensor out = m.forward(genInput, dummy);
+                const float* row = out.data->data() + step * VOCAB_SIZE;
+                int next = argmax(row, VOCAB_SIZE);
+                generated.push_back(next);
+                (*genInput.data)[(step + 1) * VOCAB_SIZE + next] = 1.0f;
+            }
+
+            std::cout << "Seed " << tokenName[seed] << " -> ";
+            for (int t : generated)
+            {
+                std::cout << tokenName[t] << " ";
+            }
+            std::cout << "\n";
         }
-        std::cout << "\n";
-    }
+    };
+
+    generate(model, "Trained model");
+
+    model.save("trained.mlt");
+    std::cout << "\nSaved to trained.mlt\n";
+
+    TransformerMiniModel freshModel(VOCAB_SIZE, 16, 16, 2, /*causal=*/true);
+    generate(freshModel, "Fresh model (random weights)");
+
+    freshModel.load("trained.mlt");
+    generate(freshModel, "Fresh model (after loading trained.mlt)");
 
     return 0;
 }

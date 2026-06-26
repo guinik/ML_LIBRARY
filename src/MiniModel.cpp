@@ -19,18 +19,18 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 		{
 			auto denseLayer = DenseLayer(outDim, inDim, Activation::SIGMOID);
 			currentNode = denseLayer.forward({currentNode});
-			for (auto& parameter : denseLayer.parameters)
+			for (auto& [name, node] : denseLayer.parameters)
 			{
-				_parameterList.push_back(parameter);
+				_parameterList.push_back(node);
 			}
 		}
 		else
 		{
 			auto denseLayer = DenseLayer(outDim, inDim, Activation::NONE);
 			currentNode = denseLayer.forward({ currentNode });
-			for (auto& parameter : denseLayer.parameters)
+			for (auto& [name, node] : denseLayer.parameters)
 			{
-				_parameterList.push_back(parameter);
+				_parameterList.push_back(node);
 			}
 		}
 		
