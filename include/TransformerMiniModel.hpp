@@ -12,6 +12,7 @@ struct TransformerMiniModel
     TransformerMiniModel(size_t vocabSize, size_t embedDim, size_t dK, size_t numAttentionLayers, bool causal = false);
 
     std::shared_ptr<Node> _inputNode;
+    std::shared_ptr<Node> _posNode;
     std::shared_ptr<Node> _targetNode;
     std::shared_ptr<Node> _resultNode;
     std::shared_ptr<Node> _lossNode;
@@ -24,6 +25,7 @@ struct TransformerMiniModel
     void save(const std::string& path) const;
     void load(const std::string& path);
     std::map<std::string, Tensor> stateDict() const;
+    size_t paramCount() const;
 
 private:
     void dfsCleanGradients(std::shared_ptr<Node> node);

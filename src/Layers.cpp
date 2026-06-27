@@ -73,6 +73,21 @@ std::shared_ptr<Node> LayerNormLayer::forward(const std::vector<std::shared_ptr<
 }
 
 
+EmbeddingLayer::EmbeddingLayer(size_t vocabSize, size_t embedDim)
+{
+	weights = std::make_shared<Node>();
+	weights->param.value = Tensor(2, {vocabSize, embedDim});
+	weights->param.value.randomize(1.0f / std::sqrt((float)embedDim));
+	parameters = {{"weight", weights}};
+}
+
+std::shared_ptr<Node> EmbeddingLayer::forward(const std::vector<std::shared_ptr<Node>>& inputsNodes)
+{
+	auto node = std::make_shared<Node>(std::make_shared<EmbeddingOperation>());
+	node->children = {inputsNodes[0], weights};
+	return node;
+}
+
 DenseLayer::DenseLayer(size_t outDim, size_t inDim, Activation inputActivation)
 {
 	size_t numDimensionsWeight{ 2 };

@@ -44,6 +44,15 @@ struct LayerNormLayer : Layer
 	float eps;
 };
 
+struct EmbeddingLayer : Layer
+{
+	EmbeddingLayer(size_t vocabSize, size_t embedDim);
+	std::shared_ptr<Node> forward(const std::vector<std::shared_ptr<Node>>& inputsNodes) override;
+	std::string layerType() const override { return "embedding"; }
+
+	std::shared_ptr<Node> weights;
+};
+
 struct SingleHeadAttention : Layer
 {
 	SingleHeadAttention(size_t d_model, size_t d_k, bool causal = false);

@@ -22,10 +22,14 @@ void TransformerMiniModel::registerLayer(Layer& layer)
 TransformerMiniModel::TransformerMiniModel(size_t vocabSize, size_t embedDim, size_t dK, size_t numAttentionLayers, bool causal)
 {
     _inputNode = std::make_shared<Node>();
+    _posNode = std::make_shared<Node>();
 
-    auto embLayer = DenseLayer(embedDim, vocabSize, Activation::NONE);
-    auto current = embLayer.forward({_inputNode});
+    auto embLayer = EmbeddingLayer(vocabSize, embedDim);
+    auto posLayer = EmbeddingLayer(512, embedDim);
+
+    auto current = embLayer.forward({_inputNode}) + posLayer.forward({_posNode});
     registerLayer("emb", embLayer);
+    registerLayer("pos_emb", posLayer);
 
     for (size_t i = 0; i < numAttentionLayers; i++)
     {
@@ -33,9 +37,19 @@ TransformerMiniModel::TransformerMiniModel(size_t vocabSize, size_t embedDim, si
         auto attended = attn.forward({current});
         registerLayer(attn);
 
-        auto ln = LayerNormLayer(embedDim);
-        current = ln.forward({current + attended});
-        registerLayer(ln);
+        auto ln1 = LayerNormLayer(embedDim);
+        auto normed = ln1.forward({current + attended});
+        registerLayer(ln1);
+
+        auto ffn1 = DenseLayer(embedDim * 4, embedDim, Activation::RELU);
+        auto ffn2 = DenseLayer(embedDim, embedDim * 4, Activation::NONE);
+        auto ffnOut = ffn2.forward({ffn1.forward({normed})});
+        registerLayer(ffn1);
+        registerLayer(ffn2);
+
+        auto ln2 = LayerNormLayer(embedDim);
+        current = ln2.forward({normed + ffnOut});
+        registerLayer(ln2);
     }
 
     auto outLayer = DenseLayer(vocabSize, embedDim, Activation::NONE);
@@ -44,11 +58,8 @@ TransformerMiniModel::TransformerMiniModel(size_t vocabSize, size_t embedDim, si
 
     _targetNode = std::make_shared<Node>();
 
-    auto diffNode = std::make_shared<Node>(std::make_shared<SubtractOperation>());
-    diffNode->children = {_resultNode, _targetNode};
-
-    _lossNode = std::make_shared<Node>(std::make_shared<SquareOperation>());
-    _lossNode->children = {diffNode, nullptr};
+    _lossNode = std::make_shared<Node>(std::make_shared<CrossEntropyOperation>());
+    _lossNode->children = {_resultNode, _targetNode};
 
     _executionGraph.emplace(_lossNode);
     _optimizer.emplace(_parameterList);
@@ -56,8 +67,22 @@ TransformerMiniModel::TransformerMiniModel(size_t vocabSize, size_t embedDim, si
 
 Tensor TransformerMiniModel::forward(Tensor input, Tensor target)
 {
+    size_t batch = input.shape[0];
+    size_t seq   = input.shape[1];
+
+    Tensor pos(2, {batch, seq});
+    for (size_t b = 0; b < batch; b++)
+    {
+        for (size_t s = 0; s < seq; s++)
+        {
+            (*pos.data)[b * seq + s] = static_cast<float>(s);
+        }
+    }
+
     _inputNode->param.value = input;
+    _posNode->param.value = pos;
     _targetNode->param.value = target;
+
     if (_executionGraph.has_value())
     {
         _executionGraph.value().computeForward();
@@ -107,6 +132,16 @@ std::map<std::string, Tensor> TransformerMiniModel::stateDict() const
         sd[name] = node->param.value;
     }
     return sd;
+}
+
+size_t TransformerMiniModel::paramCount() const
+{
+    size_t total = 0;
+    for (auto& [name, node] : _namedParams)
+    {
+        total += node->param.value.data->size();
+    }
+    return total;
 }
 
 void TransformerMiniModel::save(const std::string& path) const

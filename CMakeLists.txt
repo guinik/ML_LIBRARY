@@ -16,6 +16,7 @@ set(ML_SOURCES
 	src/Node.cpp
 	src/Layers.cpp
 	src/Serialization.cpp
+	src/DataLoader.cpp
 )
 
 set(ML_HEADERS
@@ -28,6 +29,7 @@ set(ML_HEADERS
 	include/Node.hpp
 	include/Layers.hpp
 	include/Serialization.hpp
+	include/DataLoader.hpp
 )
 
 

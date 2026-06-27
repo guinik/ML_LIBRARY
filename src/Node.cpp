@@ -535,3 +535,138 @@ Tensor unbroadcastGrad(const Tensor& grad, const std::vector<size_t>& targetShap
 	}
 	return reduced;
 }
+
+Tensor CrossEntropyOperation::forward(const std::vector<Tensor>& inputs) const
+{
+	const Tensor& logits    = inputs[0];
+	const Tensor& targetIds = inputs[1];
+
+	size_t vocabSize = logits.shape.back();
+	size_t totalRows = logits.data->size() / vocabSize;
+
+	std::vector<size_t> outShape(logits.shape.begin(), logits.shape.end() - 1);
+	Tensor result(outShape.size(), outShape);
+
+	for (size_t i = 0; i < totalRows; i++)
+	{
+		const float* logitRow = logits.data->data() + i * vocabSize;
+		size_t       targetId = static_cast<size_t>((*targetIds.data)[i]);
+
+		float maxVal = logitRow[0];
+		for (size_t j = 1; j < vocabSize; j++)
+		{
+			if (logitRow[j] > maxVal) maxVal = logitRow[j];
+		}
+
+		float sumExp = 0.0f;
+		for (size_t j = 0; j < vocabSize; j++)
+		{
+			sumExp += std::exp(logitRow[j] - maxVal);
+		}
+
+		(*result.data)[i] = -(logitRow[targetId] - maxVal - std::log(sumExp));
+	}
+
+	return result;
+}
+
+std::vector<Tensor> CrossEntropyOperation::backward(
+	const std::vector<Tensor>& inputs,
+	const Tensor&,
+	const Tensor& gradOutput) const
+{
+	const Tensor& logits    = inputs[0];
+	const Tensor& targetIds = inputs[1];
+
+	size_t vocabSize = logits.shape.back();
+	size_t totalRows = logits.data->size() / vocabSize;
+
+	Tensor gradLogits(logits.dimensions, logits.shape);
+	Tensor gradTargets(targetIds.dimensions, targetIds.shape);
+	gradTargets.fillValues(0.0f);
+
+	for (size_t i = 0; i < totalRows; i++)
+	{
+		const float* logitRow = logits.data->data() + i * vocabSize;
+		float* gradRow = gradLogits.data->data() + i * vocabSize;
+		size_t targetId = static_cast<size_t>((*targetIds.data)[i]);
+		float gi = (*gradOutput.data)[i];
+
+		float maxVal = logitRow[0];
+		for (size_t j = 1; j < vocabSize; j++)
+		{
+			if (logitRow[j] > maxVal) maxVal = logitRow[j];
+		}
+
+		float sumExp = 0.0f;
+		for (size_t j = 0; j < vocabSize; j++)
+		{
+			sumExp += std::exp(logitRow[j] - maxVal);
+		}
+
+		for (size_t j = 0; j < vocabSize; j++)
+		{
+			gradRow[j] = gi * (std::exp(logitRow[j] - maxVal) / sumExp);
+		}
+		gradRow[targetId] -= gi;
+	}
+
+	return {gradLogits, gradTargets};
+}
+
+Tensor EmbeddingOperation::forward(const std::vector<Tensor>& inputs) const
+{
+	const Tensor& tokenIds = inputs[0];
+	const Tensor& weights = inputs[1];
+
+	size_t totalTokens = tokenIds.data->size();
+	size_t embedDim = weights.shape[1];
+
+	std::vector<size_t> outShape(tokenIds.shape.begin(), tokenIds.shape.end());
+	outShape.push_back(embedDim);
+	Tensor result(outShape.size(), outShape);
+
+	for (size_t i = 0; i < totalTokens; i++)
+	{
+		size_t id = static_cast<size_t>((*tokenIds.data)[i]);
+		const float* weightRow = weights.data->data() + id * embedDim;
+		float* outRow = result.data->data() + i * embedDim;
+		for (size_t e = 0; e < embedDim; e++)
+		{
+			outRow[e] = weightRow[e];
+		}
+	}
+
+	return result;
+}
+
+std::vector<Tensor> EmbeddingOperation::backward(
+	const std::vector<Tensor>& inputs,
+	const Tensor&,
+	const Tensor& gradOutput) const
+{
+	const Tensor& tokenIds = inputs[0];
+	const Tensor& weights = inputs[1];
+
+	size_t totalTokens = tokenIds.data->size();
+	size_t embedDim = weights.shape[1];
+
+	Tensor gradTokens(tokenIds.dimensions, tokenIds.shape);
+	gradTokens.fillValues(0.0f);
+
+	Tensor gradWeights(weights.dimensions, weights.shape);
+	gradWeights.fillValues(0.0f);
+
+	for (size_t i = 0; i < totalTokens; i++)
+	{
+		size_t id = static_cast<size_t>((*tokenIds.data)[i]);
+		const float* gradRow = gradOutput.data->data() + i * embedDim;
+		float* weightRow = gradWeights.data->data() + id * embedDim;
+		for (size_t e = 0; e < embedDim; e++)
+		{
+			weightRow[e] += gradRow[e];
+		}
+	}
+
+	return {gradTokens, gradWeights};
+}

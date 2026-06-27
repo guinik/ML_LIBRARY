@@ -1,22 +1,21 @@
 #include "Tensor.hpp"
 #include "TransformerMiniModel.hpp"
+#include "DataLoader.hpp"
 #include <vector>
 #include <iostream>
 #include <cstdlib>
+#include <chrono>
+#include <fstream>
 
-static const size_t VOCAB_SIZE = 6;
-static const size_t SEQ_LEN   = 4;
-
-Tensor oneHot(const std::vector<int>& tokens)
-{
-    Tensor t(2, {SEQ_LEN, VOCAB_SIZE});
-    t.fillValues(0.0f);
-    for (size_t i = 0; i < tokens.size(); i++)
-    {
-        (*t.data)[i * VOCAB_SIZE + tokens[i]] = 1.0f;
-    }
-    return t;
-}
+static const size_t VOCAB_SIZE  = 4096;
+static const size_t SEQ_LEN     = 32;
+static const size_t EMBED_DIM   = 128;
+static const size_t DK          = 128;
+static const size_t NUM_LAYERS  = 4;
+static const size_t BATCH_SIZE  = 8;
+static const int    STEPS       = 16000;
+static const int    LOG_EVERY   = 100;
+static const int    SAVE_EVERY  = 1000;
 
 int argmax(const float* row, size_t n)
 {
@@ -35,90 +34,83 @@ int main()
 {
     srand(42);
 
-    const char* tokenName[] = {"A","B","C","D","E","F"};
+    DataLoader loader("../data/train.bin", "../data/vocab.json", SEQ_LEN, VOCAB_SIZE, BATCH_SIZE);
 
-    std::vector<std::vector<int>> inputs = {
-        {0,1,2,0},  {1,2,0,1},  {2,0,1,2},
-        {3,4,5,3},  {4,5,3,4},  {5,3,4,5},
-    };
-    std::vector<std::vector<int>> targets = {
-        {1,2,0,1},  {2,0,1,2},  {0,1,2,0},
-        {4,5,3,4},  {5,3,4,5},  {3,4,5,3},
-    };
+    TransformerMiniModel model(VOCAB_SIZE, EMBED_DIM, DK, NUM_LAYERS, /*causal=*/true);
 
-    TransformerMiniModel model(VOCAB_SIZE, 16, 16, 2, /*causal=*/true);
+    std::cout << "Parameters: " << model.paramCount() << "\n";
 
-    const int epochs = 5000;
-    for (int epoch = 0; epoch < epochs; epoch++)
     {
-        float totalLoss = 0.0f;
-        for (size_t i = 0; i < inputs.size(); i++)
+        std::ifstream check("../tinystories.mlt");
+        if (check.good())
         {
-            Tensor inp = oneHot(inputs[i]);
-            Tensor tgt = oneHot(targets[i]);
-
-            model.forward(inp, tgt);
-            model.cleanGradients();
-            model.backward();
-
-            float lr = (epoch < 2000) ? 0.005f : 0.001f;
-            model.applyGradient(lr);
-
-            for (float v : *model._lossNode->param.value.data)
-            {
-                totalLoss += v;
-            }
-        }
-
-        if (epoch % 500 == 0)
-        {
-            std::cout << "Epoch " << epoch << "  Loss: " << totalLoss << "\n";
+            std::cout << "Resuming from tinystories.mlt\n";
+            model.load("../tinystories.mlt");
         }
     }
 
-    std::vector<int> seeds = {0, 3};
+    std::cout << "Training on TinyStories (" << STEPS << " steps, batch=" << BATCH_SIZE << ")...\n";
 
-    auto generate = [&](TransformerMiniModel& m, const char* label)
+    auto trainStart = std::chrono::steady_clock::now();
+
+    for (int step = 0; step < STEPS; step++)
     {
-        std::cout << "\n--- " << label << " ---\n";
-        for (int seed : seeds)
+        auto [inp, tgt] = loader.nextBatch();
+
+        model.forward(inp, tgt);
+        model.cleanGradients();
+        model.backward();
+        model.applyGradient(0.001f);
+
+        if (step % LOG_EVERY == 0 && step > 0)
         {
-            std::vector<int> generated = {seed};
-            Tensor genInput(2, {SEQ_LEN, VOCAB_SIZE});
-            genInput.fillValues(0.0f);
-            (*genInput.data)[seed] = 1.0f;
-
-            Tensor dummy(2, {SEQ_LEN, VOCAB_SIZE});
-            dummy.fillValues(0.0f);
-
-            for (size_t step = 0; step < SEQ_LEN - 1; step++)
+            float loss = 0.0f;
+            for (float v : *model._lossNode->param.value.data)
             {
-                Tensor out = m.forward(genInput, dummy);
-                const float* row = out.data->data() + step * VOCAB_SIZE;
-                int next = argmax(row, VOCAB_SIZE);
-                generated.push_back(next);
-                (*genInput.data)[(step + 1) * VOCAB_SIZE + next] = 1.0f;
+                loss += v;
             }
 
-            std::cout << "Seed " << tokenName[seed] << " -> ";
-            for (int t : generated)
-            {
-                std::cout << tokenName[t] << " ";
-            }
-            std::cout << "\n";
+            auto now     = std::chrono::steady_clock::now();
+            double elapsed = std::chrono::duration<double>(now - trainStart).count();
+            double secPerStep = elapsed / step;
+            double etaSec     = secPerStep * (STEPS - step);
+            int etaMin        = static_cast<int>(etaSec) / 60;
+            int etaSec2       = static_cast<int>(etaSec) % 60;
+
+            std::cout << "Step " << step << "/" << STEPS
+                      << "  Loss: " << loss
+                      << "  ETA: " << etaMin << "m" << etaSec2 << "s\n";
         }
-    };
 
-    generate(model, "Trained model");
+        if (step % SAVE_EVERY == 0 && step > 0)
+        {
+            model.save("../tinystories.mlt");
+            std::cout << "Checkpoint saved at step " << step << "\n";
+        }
+    }
 
-    model.save("trained.mlt");
-    std::cout << "\nSaved to trained.mlt\n";
+    model.save("../tinystories.mlt");
+    std::cout << "\nSaved to tinystories.mlt\n";
 
-    TransformerMiniModel freshModel(VOCAB_SIZE, 16, 16, 2, /*causal=*/true);
-    generate(freshModel, "Fresh model (random weights)");
+    std::cout << "\n--- Generation ---\n";
 
-    freshModel.load("trained.mlt");
-    generate(freshModel, "Fresh model (after loading trained.mlt)");
+    Tensor genInput(2, {1, SEQ_LEN});
+    genInput.fillValues(2.0f); // <EOS> as seed
+
+    Tensor dummy(2, {1, SEQ_LEN});
+    dummy.fillValues(0.0f);
+
+    std::vector<uint16_t> generated;
+    for (size_t step = 0; step < SEQ_LEN - 1; step++)
+    {
+        Tensor out = model.forward(genInput, dummy);
+        const float* row = out.data->data() + step * VOCAB_SIZE;
+        int next = argmax(row, VOCAB_SIZE);
+        generated.push_back(static_cast<uint16_t>(next));
+        (*genInput.data)[step + 1] = static_cast<float>(next);
+    }
+
+    std::cout << loader.decode(generated) << "\n";
 
     return 0;
 }

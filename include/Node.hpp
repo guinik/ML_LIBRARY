@@ -175,3 +175,21 @@ struct LayerNormOperation : Operation
 		const Tensor& output,
 		const Tensor& gradOutput) const override;
 };
+
+struct CrossEntropyOperation : Operation
+{
+	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<Tensor>& inputs,
+		const Tensor& output,
+		const Tensor& gradOutput) const override;
+};
+
+struct EmbeddingOperation : Operation
+{
+	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<Tensor>& inputs,
+		const Tensor& output,
+		const Tensor& gradOutput) const override;
+};
