@@ -1,7 +1,7 @@
 #include "Tensor.hpp"
 #include <stdexcept>
 #include <cstdlib>
-#include <format>
+#include <string>
 
 float& Tensor::operator[](const std::vector<size_t>& inputDims) const {
 	if (inputDims.size() != shape.size())
@@ -14,7 +14,7 @@ float& Tensor::operator[](const std::vector<size_t>& inputDims) const {
 	{
 		if (inputDims[i] >= shape[i])
 		{
-			throw std::runtime_error(std::format("Out of bounds index at dim : {}", i));
+			throw std::runtime_error("Out of bounds index at dim : " + std::to_string(i));
 		}
 		projectedDim += inputDims[i] * strides[i];
 	}

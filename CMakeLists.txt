@@ -49,9 +49,9 @@ source_group("Headers" FILES ${ML_HEADERS})
 
 add_library(ML_LIBRARY STATIC ${ML_SOURCES} ${ML_HEADERS})
 if(MSVC)
-    target_compile_options(ML_LIBRARY PRIVATE /W4 /WX)
+    target_compile_options(ML_LIBRARY PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W4 /WX>)
 else()
-    target_compile_options(ML_LIBRARY PRIVATE -Wall -Wextra -Werror -O3)
+    target_compile_options(ML_LIBRARY PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra -Werror -O3>)
 endif()
 
 target_include_directories(ML_LIBRARY PUBLIC include)
