@@ -3,6 +3,9 @@
 #include <cmath>
 #include <iostream>
 #include <string>
+#ifdef USE_CUDA
+#include "CudaMatMul.hpp"
+#endif
 namespace
 {
 	void swapLastTwoDims(std::vector<size_t>& A)
@@ -12,7 +15,9 @@ namespace
 
 	Tensor matMul(const Tensor& A, const Tensor& B, uint16_t mask)
 	{
-
+#ifdef USE_CUDA
+		return cudaMatMul(A, B, mask);
+#endif
 			std::vector<size_t> shapeA = A.shape;
 		std::vector<size_t> shapeB = B.shape;
 

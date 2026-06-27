@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <chrono>
 #include <fstream>
+#ifdef USE_CUDA
+#include "CudaMatMul.hpp"
+#endif
 
 static const size_t VOCAB_SIZE  = 4096;
 static const size_t SEQ_LEN     = 32;
@@ -33,6 +36,9 @@ int argmax(const float* row, size_t n)
 int main()
 {
     srand(42);
+#ifdef USE_CUDA
+    cudaMatMulInit();
+#endif
 
     DataLoader loader("../data/train.bin", "../data/vocab.json", SEQ_LEN, VOCAB_SIZE, BATCH_SIZE);
 
@@ -112,5 +118,8 @@ int main()
 
     std::cout << loader.decode(generated) << "\n";
 
+#ifdef USE_CUDA
+    cudaMatMulShutdown();
+#endif
     return 0;
 }

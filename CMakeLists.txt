@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-project(ML_LIBRARY)
 
+option(USE_CUDA "Enable CUDA/cuBLAS acceleration for matrix multiplications" OFF)
 
+if(USE_CUDA)
+    project(ML_LIBRARY LANGUAGES CXX CUDA)
+else()
+    project(ML_LIBRARY LANGUAGES CXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +24,10 @@ set(ML_SOURCES
 	src/DataLoader.cpp
 )
 
+if(USE_CUDA)
+    list(APPEND ML_SOURCES src/CudaMatMul.cu)
+endif()
+
 set(ML_HEADERS
 	include/Parameter.hpp
 	include/Tensor.hpp
@@ -30,6 +39,7 @@ set(ML_HEADERS
 	include/Layers.hpp
 	include/Serialization.hpp
 	include/DataLoader.hpp
+	include/CudaMatMul.hpp
 )
 
 
@@ -45,6 +55,13 @@ else()
 endif()
 
 target_include_directories(ML_LIBRARY PUBLIC include)
+
+if(USE_CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    target_compile_definitions(ML_LIBRARY PUBLIC USE_CUDA)
+    target_link_libraries(ML_LIBRARY PUBLIC CUDA::cublas CUDA::cudart)
+    set_target_properties(ML_LIBRARY PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+endif()
 
 add_executable(EXECUTE src/main.cpp)
 
