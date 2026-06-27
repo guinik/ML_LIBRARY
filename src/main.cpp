@@ -16,7 +16,7 @@ static const size_t EMBED_DIM   = 128;
 static const size_t DK          = 128;
 static const size_t NUM_LAYERS  = 4;
 static const size_t BATCH_SIZE  = 8;
-static const int    STEPS       = 16000;
+static const int    STEPS       = 100000;
 static const int    LOG_EVERY   = 100;
 static const int    SAVE_EVERY  = 1000;
 
