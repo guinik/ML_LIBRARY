@@ -16,7 +16,7 @@ struct AbstractTensor
 struct Tensor : AbstractTensor
 {
 	Tensor() : dimensions(0) {};
-	Tensor(size_t  dimensionsInput, std::vector<size_t> shapes) : dimensions(dimensionsInput), shape(shapes)
+	Tensor(size_t  dimensionsInput, std::vector<size_t> shapes) : shape(shapes), dimensions(dimensionsInput)
 	{
 		size_t totalParameters{ 1 };
 		strides = shapes;
@@ -31,8 +31,9 @@ struct Tensor : AbstractTensor
 	};
 
 	Tensor(const Tensor& other)
-		: dimensions(other.dimensions), shape(other.shape), strides(other.strides),
-		  data(other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr) {}
+		: shape(other.shape), strides(other.strides),
+		  data(other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr),
+		  dimensions(other.dimensions) {}
 
 	Tensor& operator=(const Tensor& other)
 	{
