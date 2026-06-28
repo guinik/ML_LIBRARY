@@ -119,6 +119,7 @@ namespace
 		return result;
 	}
 
+#ifndef USE_CUDA
 	Tensor broadcastMultiply(const Tensor& A, const Tensor& B)
 	{
 		std::vector<size_t> shapeA = A.shape;
@@ -172,6 +173,7 @@ namespace
 		}
 		return result;
 	}
+#endif
 
 } // namespace
 
@@ -383,6 +385,7 @@ std::vector<Tensor> SigmoidOperation::backward(const std::vector<Tensor>& inputs
 	const Tensor& gradOutput) const
 {
 #ifdef USE_CUDA
+	(void)inputs;
 	return { cudaSigmoidBackward(output, gradOutput) };
 #else
 	Tensor resultLeft(inputs[0].dimensions, inputs[0].shape);
