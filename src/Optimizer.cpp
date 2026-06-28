@@ -28,6 +28,9 @@ void AdamOptimizer::applyGradients(float learningRate)
 	{
 		auto& firstMomentList = firstMomentParameter[i];
 		auto& secondMomentList = secondMomentParameter[i];
+#ifdef USE_CUDA
+		parameterNodePtrs[i]->param.grad.toCPU();
+#endif
 		auto& paramValues = *parameterNodePtrs[i]->param.value.data;
 		auto& gradValues = *parameterNodePtrs[i]->param.grad.data;
 		for (size_t paramIdx{ 0 }; paramIdx < paramValues.size(); paramIdx++)

@@ -5,6 +5,7 @@
 #include <string>
 #ifdef USE_CUDA
 #include "CudaMatMul.hpp"
+#include "CudaOps.hpp"
 #endif
 namespace
 {
@@ -179,58 +180,70 @@ namespace
 
 Tensor AddOperation::forward(const std::vector<Tensor>& inputs) const
 {
-	return inputs[0] + inputs[1];	
-};
+#ifdef USE_CUDA
+	return cudaAdd(inputs[0], inputs[1]);
+#else
+	return inputs[0] + inputs[1];
+#endif
+}
 
 std::vector<Tensor> AddOperation::backward(const std::vector<Tensor>& inputs,
 	const Tensor&,
-	const Tensor& gradOutput) const {
-
-	std::vector<Tensor> result;
-	result.reserve(2);
-	result.push_back(unbroadcastGrad(gradOutput, inputs[0].shape));
-	result.push_back(unbroadcastGrad(gradOutput, inputs[1].shape));
-	return result;
-};
+	const Tensor& gradOutput) const
+{
+#ifdef USE_CUDA
+	return {
+		cudaUnbroadcast(gradOutput, inputs[0].shape),
+		cudaUnbroadcast(gradOutput, inputs[1].shape)
+	};
+#else
+	return {
+		unbroadcastGrad(gradOutput, inputs[0].shape),
+		unbroadcastGrad(gradOutput, inputs[1].shape)
+	};
+#endif
+}
 
 Tensor SubtractOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaSubtract(inputs[0], inputs[1]);
+#else
 	return inputs[0] - inputs[1];
-};
+#endif
+}
 
 std::vector<Tensor> SubtractOperation::backward(const std::vector<Tensor>&,
 	const Tensor&,
-	const Tensor& gradOutput) const {
-
-	std::vector<Tensor> result;
-	result.reserve(2);
-
-	Tensor leftGrad = gradOutput;
-	result.push_back(leftGrad);
-	Tensor rightGrad = gradOutput * (-1.0f);
-	result.push_back(rightGrad);
-
-	return result;
-};
+	const Tensor& gradOutput) const
+{
+#ifdef USE_CUDA
+	return { gradOutput, cudaScale(gradOutput, -1.0f) };
+#else
+	return { gradOutput, gradOutput * (-1.0f) };
+#endif
+}
 
 
 Tensor ScaleOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaScale(inputs[0], scaleFactor);
+#else
 	return inputs[0] * scaleFactor;
-};
+#endif
+}
 
 std::vector<Tensor> ScaleOperation::backward(const std::vector<Tensor>&,
 	const Tensor&,
-	const Tensor& gradOutput) const {
-
-	std::vector<Tensor> result;
-	result.reserve(1);
-
-	Tensor leftGrad = gradOutput * scaleFactor;
-	result.push_back(leftGrad);
-
-	return result;
-};
+	const Tensor& gradOutput) const
+{
+#ifdef USE_CUDA
+	return { cudaScale(gradOutput, scaleFactor) };
+#else
+	return { gradOutput * scaleFactor };
+#endif
+}
 
 
 
@@ -264,119 +277,147 @@ std::vector<Tensor> MatMulOperation::backward(const std::vector<Tensor>& inputs,
 		rightGrad = matMul(gradOutput, inputs[0], MatMulFlags::MATMUL_TRANSPOSE_A | MatMulFlags::MATMUL_TRANSPOSE_B);
 	}
 
+#ifdef USE_CUDA
+	result.push_back(cudaUnbroadcast(leftGrad, inputs[0].shape));
+	result.push_back(cudaUnbroadcast(rightGrad, inputs[1].shape));
+#else
 	result.push_back(unbroadcastGrad(leftGrad, inputs[0].shape));
 	result.push_back(unbroadcastGrad(rightGrad, inputs[1].shape));
+#endif
 	return result;
-};
+}
 
 
 
 Tensor ReluOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaRelu(inputs[0]);
+#else
 	Tensor leftTensor = inputs[0];
 	Tensor result(leftTensor.dimensions, leftTensor.shape);
 	const float* src = leftTensor.data->data();
 	float* dst = result.data->data();
 	size_t n = leftTensor.data->size();
 	for (size_t i{ 0 }; i < n; i++)
+	{
 		dst[i] = src[i] > 0.0f ? src[i] : 0.0f;
+	}
 	return result;
+#endif
+}
 
-};
 std::vector<Tensor> ReluOperation::backward(const std::vector<Tensor>& inputs,
 	const Tensor&,
-	const Tensor& gradOutput) const {
-
-	std::vector<Tensor> result;
-	result.reserve(1);
+	const Tensor& gradOutput) const
+{
+#ifdef USE_CUDA
+	return { cudaReluBackward(inputs[0], gradOutput) };
+#else
 	Tensor resultLeft(inputs[0].dimensions, inputs[0].shape);
 	const float* val = inputs[0].data->data();
 	const float* grad = gradOutput.data->data();
 	float* dst = resultLeft.data->data();
 	size_t n = inputs[0].data->size();
 	for (size_t i{ 0 }; i < n; i++)
+	{
 		dst[i] = val[i] > 0.0f ? grad[i] : 0.0f;
-
-	result.push_back(resultLeft);
-	return result;
-};
+	}
+	return { resultLeft };
+#endif
+}
 
 
 
 Tensor SquareOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaSquare(inputs[0]);
+#else
 	return inputs[0].square();
+#endif
+}
 
-};
 std::vector<Tensor> SquareOperation::backward(const std::vector<Tensor>& inputs,
 	const Tensor&,
-	const Tensor& gradOutput) const {
-
+	const Tensor& gradOutput) const
+{
+#ifdef USE_CUDA
+	return { cudaSquareBackward(inputs[0], gradOutput) };
+#else
 	Tensor localGrad(inputs[0].dimensions, inputs[0].shape);
 	const float* val = inputs[0].data->data();
 	const float* grad = gradOutput.data->data();
 	float* dst = localGrad.data->data();
 	size_t n = inputs[0].data->size();
 	for (size_t i = 0; i < n; i++)
+	{
 		dst[i] = 2.0f * val[i] * grad[i];
-		
-		
-	std::vector<Tensor> result;
-	result.push_back(localGrad);
-	return result;
-};
+	}
+	return { localGrad };
+#endif
+}
 
 
 
 Tensor SigmoidOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaSigmoid(inputs[0]);
+#else
 	Tensor leftTensor = inputs[0];
 	Tensor result(leftTensor.dimensions, leftTensor.shape);
 	const float* src = leftTensor.data->data();
 	float* dst = result.data->data();
 	size_t n = leftTensor.data->size();
-	
 	for (size_t i{ 0 }; i < n; i++)
-		dst[i] = (1) / (1 + std::exp(-src[i]));
+	{
+		dst[i] = 1.0f / (1.0f + std::exp(-src[i]));
+	}
 	return result;
+#endif
+}
 
-};
 std::vector<Tensor> SigmoidOperation::backward(const std::vector<Tensor>& inputs,
 	const Tensor& output,
-	const Tensor& gradOutput) const {
-	std::vector<Tensor> result;
-	result.reserve(1);
+	const Tensor& gradOutput) const
+{
+#ifdef USE_CUDA
+	return { cudaSigmoidBackward(output, gradOutput) };
+#else
 	Tensor resultLeft(inputs[0].dimensions, inputs[0].shape);
 	const float* outputVal = output.data->data();
 	const float* grad = gradOutput.data->data();
 	float* dst = resultLeft.data->data();
 	size_t n = inputs[0].data->size();
 	for (size_t i{ 0 }; i < n; i++)
-		dst[i] = outputVal[i]* (1- outputVal[i]) * grad[i];
-
-	result.push_back(resultLeft);
-	return result;
-};
+	{
+		dst[i] = outputVal[i] * (1.0f - outputVal[i]) * grad[i];
+	}
+	return { resultLeft };
+#endif
+}
 
 
 Tensor SoftmaxOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaSoftmax(inputs[0]);
+#else
 	Tensor leftTensor = inputs[0];
 	Tensor result(leftTensor.dimensions, leftTensor.shape);
 	const float* src = leftTensor.data->data();
 	float* dst = result.data->data();
-
 	size_t n = leftTensor.shape.back();
 	size_t totalRows = leftTensor.data->size() / n;
-
 	for (size_t b{ 0 }; b < totalRows; b++)
 	{
 		size_t offset = b * n;
-
 		float maxVal = src[offset];
 		for (size_t i{ 1 }; i < n; i++)
+		{
 			maxVal = std::max(maxVal, src[offset + i]);
-
+		}
 		float sum = 0.0f;
 		for (size_t i{ 0 }; i < n; i++)
 		{
@@ -385,59 +426,79 @@ Tensor SoftmaxOperation::forward(const std::vector<Tensor>& inputs) const
 			sum += e;
 		}
 		for (size_t i{ 0 }; i < n; i++)
+		{
 			dst[offset + i] /= sum;
+		}
 	}
 	return result;
-
-};
+#endif
+}
 
 std::vector<Tensor> SoftmaxOperation::backward(const std::vector<Tensor>&,
 	const Tensor& output,
-	const Tensor& gradOutput) const {
-	std::vector<Tensor> result;
-	result.reserve(1);
+	const Tensor& gradOutput) const
+{
+#ifdef USE_CUDA
+	return { cudaSoftmaxBackward(output, gradOutput) };
+#else
 	Tensor weighted = output * gradOutput;
 	Tensor dotProduct = weighted.sumAxisKeepDim(weighted.dimensions - 1);
 	Tensor gradInput = output * (gradOutput + dotProduct * (-1.0f));
-	result.push_back(gradInput);
-	return result;
-};
+	return { gradInput };
+#endif
+}
 
 
 Tensor MultiplyOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaElemMul(inputs[0], inputs[1]);
+#else
 	return broadcastMultiply(inputs[0], inputs[1]);
+#endif
 }
 
 std::vector<Tensor> MultiplyOperation::backward(const std::vector<Tensor>& inputs,
 	const Tensor&,
 	const Tensor& gradOutput) const
 {
+#ifdef USE_CUDA
+	Tensor leftGrad = cudaElemMul(gradOutput, inputs[1]);
+	Tensor rightGrad = cudaElemMul(gradOutput, inputs[0]);
+	return {
+		cudaUnbroadcast(leftGrad, inputs[0].shape),
+		cudaUnbroadcast(rightGrad, inputs[1].shape)
+	};
+#else
 	Tensor leftGrad  = broadcastMultiply(gradOutput, inputs[1]);
 	Tensor rightGrad = broadcastMultiply(gradOutput, inputs[0]);
 	return {
-		unbroadcastGrad(leftGrad,  inputs[0].shape),
+		unbroadcastGrad(leftGrad, inputs[0].shape),
 		unbroadcastGrad(rightGrad, inputs[1].shape)
 	};
+#endif
 }
 
 Tensor LayerNormOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaLayerNorm(inputs[0], eps);
+#else
 	const Tensor& x = inputs[0];
 	size_t n = x.shape.back();
 	size_t totalRows = x.data->size() / n;
 	Tensor result(x.dimensions, x.shape);
 	const float* src = x.data->data();
 	float* dst = result.data->data();
-
 	for (size_t b = 0; b < totalRows; b++)
 	{
 		size_t offset = b * n;
-
 		float mean = 0.0f;
-		for (size_t i = 0; i < n; i++) { mean += src[offset + i]; }
+		for (size_t i = 0; i < n; i++)
+		{
+			mean += src[offset + i];
+		}
 		mean /= static_cast<float>(n);
-
 		float var = 0.0f;
 		for (size_t i = 0; i < n; i++)
 		{
@@ -445,7 +506,6 @@ Tensor LayerNormOperation::forward(const std::vector<Tensor>& inputs) const
 			var += d * d;
 		}
 		var /= static_cast<float>(n);
-
 		float invStd = 1.0f / std::sqrt(var + eps);
 		for (size_t i = 0; i < n; i++)
 		{
@@ -453,29 +513,33 @@ Tensor LayerNormOperation::forward(const std::vector<Tensor>& inputs) const
 		}
 	}
 	return result;
+#endif
 }
 
 std::vector<Tensor> LayerNormOperation::backward(const std::vector<Tensor>& inputs,
 	const Tensor& output,
 	const Tensor& gradOutput) const
 {
+#ifdef USE_CUDA
+	return { cudaLayerNormBackward(inputs[0], output, gradOutput, eps) };
+#else
 	const Tensor& x = inputs[0];
 	size_t n = x.shape.back();
 	size_t totalRows = x.data->size() / n;
 	Tensor grad(x.dimensions, x.shape);
-	const float* src   = x.data->data();
-	const float* xhat  = output.data->data();
-	const float* dout  = gradOutput.data->data();
-	float*       dx    = grad.data->data();
-
+	const float* src = x.data->data();
+	const float* xhat = output.data->data();
+	const float* dout = gradOutput.data->data();
+	float* dx = grad.data->data();
 	for (size_t b = 0; b < totalRows; b++)
 	{
 		size_t offset = b * n;
-
 		float mean = 0.0f;
-		for (size_t i = 0; i < n; i++) { mean += src[offset + i]; }
+		for (size_t i = 0; i < n; i++)
+		{
+			mean += src[offset + i];
+		}
 		mean /= static_cast<float>(n);
-
 		float var = 0.0f;
 		for (size_t i = 0; i < n; i++)
 		{
@@ -484,14 +548,12 @@ std::vector<Tensor> LayerNormOperation::backward(const std::vector<Tensor>& inpu
 		}
 		var /= static_cast<float>(n);
 		float invStd = 1.0f / std::sqrt(var + eps);
-
 		float sumDout = 0.0f, sumDoutXhat = 0.0f;
 		for (size_t i = 0; i < n; i++)
 		{
-			sumDout     += dout[offset + i];
+			sumDout += dout[offset + i];
 			sumDoutXhat += dout[offset + i] * xhat[offset + i];
 		}
-
 		float fn = static_cast<float>(n);
 		for (size_t i = 0; i < n; i++)
 		{
@@ -501,10 +563,14 @@ std::vector<Tensor> LayerNormOperation::backward(const std::vector<Tensor>& inpu
 		}
 	}
 	return { grad };
+#endif
 }
 
 Tensor CausalMaskOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaCausalMask(inputs[0]);
+#else
 	Tensor result = inputs[0];
 	size_t seq = result.shape.back();
 	size_t numMatrices = result.data->size() / (seq * seq);
@@ -520,6 +586,7 @@ Tensor CausalMaskOperation::forward(const std::vector<Tensor>& inputs) const
 		}
 	}
 	return result;
+#endif
 }
 
 std::vector<Tensor> CausalMaskOperation::backward(const std::vector<Tensor>&,
@@ -543,36 +610,33 @@ Tensor unbroadcastGrad(const Tensor& grad, const std::vector<size_t>& targetShap
 
 Tensor CrossEntropyOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaCrossEntropyForward(inputs[0], inputs[1]);
+#else
 	const Tensor& logits    = inputs[0];
 	const Tensor& targetIds = inputs[1];
-
 	size_t vocabSize = logits.shape.back();
 	size_t totalRows = logits.data->size() / vocabSize;
-
 	std::vector<size_t> outShape(logits.shape.begin(), logits.shape.end() - 1);
 	Tensor result(outShape.size(), outShape);
-
 	for (size_t i = 0; i < totalRows; i++)
 	{
 		const float* logitRow = logits.data->data() + i * vocabSize;
 		size_t       targetId = static_cast<size_t>((*targetIds.data)[i]);
-
 		float maxVal = logitRow[0];
 		for (size_t j = 1; j < vocabSize; j++)
 		{
-			if (logitRow[j] > maxVal) maxVal = logitRow[j];
+			if (logitRow[j] > maxVal) { maxVal = logitRow[j]; }
 		}
-
 		float sumExp = 0.0f;
 		for (size_t j = 0; j < vocabSize; j++)
 		{
 			sumExp += std::exp(logitRow[j] - maxVal);
 		}
-
 		(*result.data)[i] = -(logitRow[targetId] - maxVal - std::log(sumExp));
 	}
-
 	return result;
+#endif
 }
 
 std::vector<Tensor> CrossEntropyOperation::backward(
@@ -580,57 +644,55 @@ std::vector<Tensor> CrossEntropyOperation::backward(
 	const Tensor&,
 	const Tensor& gradOutput) const
 {
+#ifdef USE_CUDA
+	auto [gradLogits, gradTargets] = cudaCrossEntropyBackward(inputs[0], inputs[1], gradOutput);
+	return { gradLogits, gradTargets };
+#else
 	const Tensor& logits    = inputs[0];
 	const Tensor& targetIds = inputs[1];
-
 	size_t vocabSize = logits.shape.back();
 	size_t totalRows = logits.data->size() / vocabSize;
-
 	Tensor gradLogits(logits.dimensions, logits.shape);
 	Tensor gradTargets(targetIds.dimensions, targetIds.shape);
 	gradTargets.fillValues(0.0f);
-
 	for (size_t i = 0; i < totalRows; i++)
 	{
 		const float* logitRow = logits.data->data() + i * vocabSize;
 		float* gradRow = gradLogits.data->data() + i * vocabSize;
 		size_t targetId = static_cast<size_t>((*targetIds.data)[i]);
 		float gi = (*gradOutput.data)[i];
-
 		float maxVal = logitRow[0];
 		for (size_t j = 1; j < vocabSize; j++)
 		{
-			if (logitRow[j] > maxVal) maxVal = logitRow[j];
+			if (logitRow[j] > maxVal) { maxVal = logitRow[j]; }
 		}
-
 		float sumExp = 0.0f;
 		for (size_t j = 0; j < vocabSize; j++)
 		{
 			sumExp += std::exp(logitRow[j] - maxVal);
 		}
-
 		for (size_t j = 0; j < vocabSize; j++)
 		{
 			gradRow[j] = gi * (std::exp(logitRow[j] - maxVal) / sumExp);
 		}
 		gradRow[targetId] -= gi;
 	}
-
-	return {gradLogits, gradTargets};
+	return { gradLogits, gradTargets };
+#endif
 }
 
 Tensor EmbeddingOperation::forward(const std::vector<Tensor>& inputs) const
 {
+#ifdef USE_CUDA
+	return cudaEmbeddingForward(inputs[0], inputs[1]);
+#else
 	const Tensor& tokenIds = inputs[0];
 	const Tensor& weights = inputs[1];
-
 	size_t totalTokens = tokenIds.data->size();
 	size_t embedDim = weights.shape[1];
-
 	std::vector<size_t> outShape(tokenIds.shape.begin(), tokenIds.shape.end());
 	outShape.push_back(embedDim);
 	Tensor result(outShape.size(), outShape);
-
 	for (size_t i = 0; i < totalTokens; i++)
 	{
 		size_t id = static_cast<size_t>((*tokenIds.data)[i]);
@@ -641,8 +703,8 @@ Tensor EmbeddingOperation::forward(const std::vector<Tensor>& inputs) const
 			outRow[e] = weightRow[e];
 		}
 	}
-
 	return result;
+#endif
 }
 
 std::vector<Tensor> EmbeddingOperation::backward(
@@ -650,18 +712,21 @@ std::vector<Tensor> EmbeddingOperation::backward(
 	const Tensor&,
 	const Tensor& gradOutput) const
 {
+#ifdef USE_CUDA
+	Tensor gradTokens(inputs[0].dimensions, inputs[0].shape);
+	gradTokens.fillValues(0.0f);
+	gradTokens.toGPU();
+	Tensor gradWeights = cudaEmbeddingBackwardWeights(inputs[0], inputs[1], gradOutput);
+	return { gradTokens, gradWeights };
+#else
 	const Tensor& tokenIds = inputs[0];
 	const Tensor& weights = inputs[1];
-
 	size_t totalTokens = tokenIds.data->size();
 	size_t embedDim = weights.shape[1];
-
 	Tensor gradTokens(tokenIds.dimensions, tokenIds.shape);
 	gradTokens.fillValues(0.0f);
-
 	Tensor gradWeights(weights.dimensions, weights.shape);
 	gradWeights.fillValues(0.0f);
-
 	for (size_t i = 0; i < totalTokens; i++)
 	{
 		size_t id = static_cast<size_t>((*tokenIds.data)[i]);
@@ -672,6 +737,6 @@ std::vector<Tensor> EmbeddingOperation::backward(
 			weightRow[e] += gradRow[e];
 		}
 	}
-
-	return {gradTokens, gradWeights};
+	return { gradTokens, gradWeights };
+#endif
 }

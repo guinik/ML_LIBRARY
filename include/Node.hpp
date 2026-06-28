@@ -2,6 +2,9 @@
 #include <array>
 #include "Tensor.hpp"
 #include "Parameter.hpp"
+#ifdef USE_CUDA
+#include "CudaOps.hpp"
+#endif
 enum MatMulFlags : uint16_t
 {
 	MATMUL_NO_TRANSPOSES = 0,
@@ -99,16 +102,17 @@ struct Node
 			{
 				continue;
 			}
-#ifdef USE_CUDA
-			gradResult[i].toCPU();
-#endif
 			if (children[i]->param.grad.dimensions == 0)
 			{
 				children[i]->param.grad = gradResult[i];
 			}
 			else
 			{
+#ifdef USE_CUDA
+				children[i]->param.grad = cudaAdd(children[i]->param.grad, gradResult[i]);
+#else
 				children[i]->param.grad = children[i]->param.grad + gradResult[i];
+#endif
 			}
 		}
 	}
@@ -122,6 +126,7 @@ struct AddOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct SubtractOperation : Operation
@@ -131,6 +136,7 @@ struct SubtractOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct ScaleOperation : Operation
@@ -142,6 +148,7 @@ struct ScaleOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct MatMulOperation : Operation
@@ -163,6 +170,7 @@ struct ReluOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct SquareOperation : Operation
@@ -172,6 +180,7 @@ struct SquareOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct SigmoidOperation : Operation
@@ -181,6 +190,7 @@ struct SigmoidOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct SoftmaxOperation : Operation
@@ -190,6 +200,7 @@ struct SoftmaxOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct CausalMaskOperation : Operation
@@ -199,6 +210,7 @@ struct CausalMaskOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct MultiplyOperation : Operation
@@ -208,6 +220,7 @@ struct MultiplyOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct LayerNormOperation : Operation
@@ -219,6 +232,7 @@ struct LayerNormOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor& output,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct CrossEntropyOperation : Operation
@@ -228,6 +242,7 @@ struct CrossEntropyOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor& output,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct EmbeddingOperation : Operation
@@ -237,4 +252,5 @@ struct EmbeddingOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor& output,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };

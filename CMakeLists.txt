@@ -26,6 +26,7 @@ set(ML_SOURCES
 
 if(USE_CUDA)
     list(APPEND ML_SOURCES src/CudaMatMul.cu)
+    list(APPEND ML_SOURCES src/CudaOps.cu)
 endif()
 
 set(ML_HEADERS
@@ -40,7 +41,9 @@ set(ML_HEADERS
 	include/Serialization.hpp
 	include/DataLoader.hpp
 	include/CudaMatMul.hpp
+	include/CudaOps.hpp
 )
+
 
 
 source_group("Sources" FILES ${ML_SOURCES})
