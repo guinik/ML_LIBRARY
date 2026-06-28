@@ -50,7 +50,7 @@ void Tensor::toGPU() const
     {
         return;
     }
-    size_t n = data->size();
+    size_t n = nelems();
     float* ptr = cudaPoolAlloc(n);
     CUDA_CHECK(cudaMemcpy(ptr, data->data(), n * sizeof(float), cudaMemcpyHostToDevice));
     d_data = std::shared_ptr<float>(ptr, PoolDeleter{n});
@@ -62,8 +62,9 @@ void Tensor::toCPU() const
     {
         return;
     }
-    size_t bytes = data->size() * sizeof(float);
-    CUDA_CHECK(cudaMemcpy(data->data(), d_data.get(), bytes, cudaMemcpyDeviceToHost));
+    size_t n = nelems();
+    if (data->size() != n) { data->resize(n); }
+    CUDA_CHECK(cudaMemcpy(data->data(), d_data.get(), n * sizeof(float), cudaMemcpyDeviceToHost));
     d_data.reset();
 }
 
@@ -131,8 +132,8 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
         B.toGPU();
     }
 
-    long long strideDevB = (B.data->size() > K * N) ? (long long)(K * N) : 0LL;
-    long long strideDevA = (A.data->size() > M * K) ? (long long)(M * K) : 0LL;
+    long long strideDevB = (B.nelems() > K * N) ? (long long)(K * N) : 0LL;
+    long long strideDevA = (A.nelems() > M * K) ? (long long)(M * K) : 0LL;
     long long strideDevC = (long long)(M * N);
 
     size_t nC = batchCount * M * N;

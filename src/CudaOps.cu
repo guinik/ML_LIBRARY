@@ -21,7 +21,17 @@ static Tensor makeCudaTensor(const std::vector<size_t>& shape, float* dPtr)
 {
     size_t n = 1;
     for (auto d : shape) { n *= d; }
-    Tensor t(shape.size(), shape);
+    Tensor t;
+    t.dimensions = shape.size();
+    t.shape = shape;
+    t.strides.resize(shape.size());
+    size_t stride = 1;
+    for (int i = (int)shape.size() - 1; i >= 0; i--)
+    {
+        t.strides[i] = stride;
+        stride *= shape[i];
+    }
+    t.data = std::make_shared<std::vector<float>>();
     t.d_data = std::shared_ptr<float>(dPtr, PoolDeleter{n});
     return t;
 }
@@ -32,7 +42,17 @@ static Tensor makeZeroCudaTensor(const std::vector<size_t>& shape)
     for (auto d : shape) { n *= d; }
     float* dPtr = cudaPoolAlloc(n);
     CUDA_CHECK(cudaMemsetAsync(dPtr, 0, n * sizeof(float)));
-    Tensor t(shape.size(), shape);
+    Tensor t;
+    t.dimensions = shape.size();
+    t.shape = shape;
+    t.strides.resize(shape.size());
+    size_t stride = 1;
+    for (int i = (int)shape.size() - 1; i >= 0; i--)
+    {
+        t.strides[i] = stride;
+        stride *= shape[i];
+    }
+    t.data = std::make_shared<std::vector<float>>();
     t.d_data = std::shared_ptr<float>(dPtr, PoolDeleter{n});
     return t;
 }
@@ -483,7 +503,7 @@ Tensor cudaElemMul(const Tensor& A, const Tensor& B)
 Tensor cudaScale(const Tensor& A, float factor)
 {
     A.toGPU();
-    int n = (int)A.data->size();
+    int n = (int)A.nelems();
     float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
@@ -494,7 +514,7 @@ Tensor cudaScale(const Tensor& A, float factor)
 Tensor cudaRelu(const Tensor& A)
 {
     A.toGPU();
-    int n = (int)A.data->size();
+    int n = (int)A.nelems();
     float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
@@ -506,7 +526,7 @@ Tensor cudaReluBackward(const Tensor& input, const Tensor& gradOutput)
 {
     input.toGPU();
     gradOutput.toGPU();
-    int n = (int)input.data->size();
+    int n = (int)input.nelems();
     float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
@@ -517,7 +537,7 @@ Tensor cudaReluBackward(const Tensor& input, const Tensor& gradOutput)
 Tensor cudaSigmoid(const Tensor& A)
 {
     A.toGPU();
-    int n = (int)A.data->size();
+    int n = (int)A.nelems();
     float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
@@ -529,7 +549,7 @@ Tensor cudaSigmoidBackward(const Tensor& output, const Tensor& gradOutput)
 {
     output.toGPU();
     gradOutput.toGPU();
-    int n = (int)output.data->size();
+    int n = (int)output.nelems();
     float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
@@ -540,7 +560,7 @@ Tensor cudaSigmoidBackward(const Tensor& output, const Tensor& gradOutput)
 Tensor cudaSquare(const Tensor& A)
 {
     A.toGPU();
-    int n = (int)A.data->size();
+    int n = (int)A.nelems();
     float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
@@ -552,7 +572,7 @@ Tensor cudaSquareBackward(const Tensor& input, const Tensor& gradOutput)
 {
     input.toGPU();
     gradOutput.toGPU();
-    int n = (int)input.data->size();
+    int n = (int)input.nelems();
     float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
@@ -563,7 +583,7 @@ Tensor cudaSquareBackward(const Tensor& input, const Tensor& gradOutput)
 Tensor cudaSoftmax(const Tensor& A)
 {
     A.toGPU();
-    size_t n = A.data->size();
+    size_t n = A.nelems();
     size_t cols = A.shape.back();
     size_t rows = n / cols;
     float* dOut = cudaPoolAlloc(n);
@@ -577,7 +597,7 @@ Tensor cudaSoftmaxBackward(const Tensor& output, const Tensor& gradOutput)
 {
     output.toGPU();
     gradOutput.toGPU();
-    size_t n = output.data->size();
+    size_t n = output.nelems();
     size_t cols = output.shape.back();
     size_t rows = n / cols;
     float* dOut = cudaPoolAlloc(n);
@@ -591,7 +611,7 @@ Tensor cudaSoftmaxBackward(const Tensor& output, const Tensor& gradOutput)
 Tensor cudaLayerNorm(const Tensor& A, float eps)
 {
     A.toGPU();
-    size_t n = A.data->size();
+    size_t n = A.nelems();
     size_t cols = A.shape.back();
     size_t rows = n / cols;
     float* dOut = cudaPoolAlloc(n);
@@ -606,7 +626,7 @@ Tensor cudaLayerNormBackward(const Tensor& x, const Tensor& xhat, const Tensor& 
     x.toGPU();
     xhat.toGPU();
     gradOutput.toGPU();
-    size_t n = x.data->size();
+    size_t n = x.nelems();
     size_t cols = x.shape.back();
     size_t rows = n / cols;
     float* dOut = cudaPoolAlloc(n);
@@ -622,7 +642,7 @@ Tensor cudaCausalMask(const Tensor& A)
 {
     A.toGPU();
     int seq = (int)A.shape.back();
-    size_t total = A.data->size();
+    size_t total = A.nelems();
     int numMatrices = (int)total / (seq * seq);
     float* dOut = cudaPoolAlloc(total);
     CUDA_CHECK(cudaMemcpyAsync(dOut, A.d_data.get(), total * sizeof(float), cudaMemcpyDeviceToDevice));
@@ -636,7 +656,7 @@ Tensor cudaEmbeddingForward(const Tensor& ids, const Tensor& weights)
 {
     ids.toGPU();
     weights.toGPU();
-    int numTokens = (int)ids.data->size();
+    int numTokens = (int)ids.nelems();
     int embedDim = (int)weights.shape[1];
     auto outShape = ids.shape;
     outShape.push_back((size_t)embedDim);
@@ -651,7 +671,7 @@ Tensor cudaEmbeddingBackwardWeights(const Tensor& ids, const Tensor& weightsRef,
 {
     ids.toGPU();
     gradOutput.toGPU();
-    int numTokens = (int)ids.data->size();
+    int numTokens = (int)ids.nelems();
     int embedDim = (int)weightsRef.shape[1];
     (void)weightsRef.shape[0];
     Tensor gradWeights = makeZeroCudaTensor(weightsRef.shape);
@@ -666,7 +686,7 @@ Tensor cudaCrossEntropyForward(const Tensor& logits, const Tensor& targets)
     logits.toGPU();
     targets.toGPU();
     int vocabSize = (int)logits.shape.back();
-    int rows = (int)(logits.data->size() / vocabSize);
+    int rows = (int)(logits.nelems() / vocabSize);
     auto outShape = std::vector<size_t>(logits.shape.begin(), logits.shape.end() - 1);
     float* dOut = cudaPoolAlloc((size_t)rows);
     int threads = 256;
@@ -683,8 +703,8 @@ std::pair<Tensor, Tensor> cudaCrossEntropyBackward(
     targets.toGPU();
     gradOutput.toGPU();
     int vocabSize = (int)logits.shape.back();
-    int rows = (int)(logits.data->size() / vocabSize);
-    size_t n = logits.data->size();
+    int rows = (int)(logits.nelems() / vocabSize);
+    size_t n = logits.nelems();
     float* dGrad = cudaPoolAlloc(n);
     int threads = 256;
     size_t smem = threads * sizeof(float);

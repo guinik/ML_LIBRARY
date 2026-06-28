@@ -6,21 +6,36 @@
 #include <cstdlib>
 #include <chrono>
 #include <fstream>
+#include <cmath>
 #ifdef USE_CUDA
 #include "CudaMatMul.hpp"
 #include "CudaOps.hpp"
 #include "CudaPool.hpp"
 #endif
 
-static const size_t VOCAB_SIZE  = 4096;
-static const size_t SEQ_LEN     = 64;
-static const size_t EMBED_DIM   = 256;
-static const size_t DK          = 256;
-static const size_t NUM_LAYERS  = 6;
-static const size_t BATCH_SIZE  = 16;
-static const int    STEPS       = 100000;
-static const int    LOG_EVERY   = 100;
-static const int    SAVE_EVERY  = 1000;
+static const size_t VOCAB_SIZE   = 4096;
+static const size_t SEQ_LEN      = 64;
+static const size_t EMBED_DIM    = 256;
+static const size_t DK           = 256;
+static const size_t NUM_LAYERS   = 6;
+static const size_t BATCH_SIZE   = 16;
+static const int    STEPS        = 100000;
+static const int    LOG_EVERY    = 100;
+static const int    SAVE_EVERY   = 1000;
+static const float  MAX_LR       = 3e-4f;
+static const float  MIN_LR_FRAC  = 0.1f;
+static const int    WARMUP_STEPS = 2000;
+
+static float getLR(int step)
+{
+    if (step < WARMUP_STEPS)
+    {
+        return MAX_LR * (float)(step + 1) / WARMUP_STEPS;
+    }
+    float t = (float)(step - WARMUP_STEPS) / (STEPS - WARMUP_STEPS);
+    float cosine = 0.5f * (1.0f + cosf(3.14159265f * t));
+    return MAX_LR * (MIN_LR_FRAC + (1.0f - MIN_LR_FRAC) * cosine);
+}
 
 int argmax(const float* row, size_t n)
 {
@@ -68,7 +83,7 @@ int main()
         model.forward(inp, tgt);
         model.cleanGradients();
         model.backward();
-        model.applyGradient(0.001f);
+        model.applyGradient(getLR(step));
 
         if (step % LOG_EVERY == 0 && step > 0)
         {
@@ -90,6 +105,7 @@ int main()
 
             std::cout << "Step " << step << "/" << STEPS
                       << "  Loss: " << loss
+                      << "  LR: " << getLR(step)
                       << "  ETA: " << etaMin << "m" << etaSec2 << "s\n";
         }
 

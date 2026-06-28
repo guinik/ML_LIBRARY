@@ -78,6 +78,13 @@ struct Tensor : AbstractTensor
 	bool onGPU() const { return d_data != nullptr; }
 #endif
 
+	size_t nelems() const
+	{
+		size_t n = 1;
+		for (auto d : shape) { n *= d; }
+		return n;
+	}
+
 	void transpose();
 	void fillValues(float value);
 	Tensor square() const;
