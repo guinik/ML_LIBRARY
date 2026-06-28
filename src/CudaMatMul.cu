@@ -1,4 +1,5 @@
 #include "CudaMatMul.hpp"
+#include "CudaPool.hpp"
 #include "Node.hpp"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
@@ -29,17 +30,6 @@ static cublasHandle_t g_handle = nullptr;
         } \
     } while (0)
 
-struct CudaDeleter
-{
-    void operator()(float* p) const
-    {
-        if (p)
-        {
-            cudaFree(p);
-        }
-    }
-};
-
 void cudaMatMulInit()
 {
     CUBLAS_CHECK(cublasCreate(&g_handle));
@@ -60,11 +50,10 @@ void Tensor::toGPU() const
     {
         return;
     }
-    size_t bytes = data->size() * sizeof(float);
-    float* ptr = nullptr;
-    CUDA_CHECK(cudaMalloc(&ptr, bytes));
-    CUDA_CHECK(cudaMemcpy(ptr, data->data(), bytes, cudaMemcpyHostToDevice));
-    d_data = std::shared_ptr<float>(ptr, CudaDeleter{});
+    size_t n = data->size();
+    float* ptr = cudaPoolAlloc(n);
+    CUDA_CHECK(cudaMemcpy(ptr, data->data(), n * sizeof(float), cudaMemcpyHostToDevice));
+    d_data = std::shared_ptr<float>(ptr, PoolDeleter{n});
 }
 
 void Tensor::toCPU() const
@@ -146,9 +135,8 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
     long long strideDevA = (A.data->size() > M * K) ? (long long)(M * K) : 0LL;
     long long strideDevC = (long long)(M * N);
 
-    size_t bytesC = batchCount * M * N * sizeof(float);
-    float* d_C = nullptr;
-    CUDA_CHECK(cudaMalloc(&d_C, bytesC));
+    size_t nC = batchCount * M * N;
+    float* d_C = cudaPoolAlloc(nC);
 
     const float alpha = 1.0f;
     const float beta = 0.0f;
@@ -170,6 +158,6 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
     ));
 
     Tensor result(resultShape.size(), resultShape);
-    result.d_data = std::shared_ptr<float>(d_C, CudaDeleter{});
+    result.d_data = std::shared_ptr<float>(d_C, PoolDeleter{nC});
     return result;
 }

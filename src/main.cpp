@@ -9,6 +9,7 @@
 #ifdef USE_CUDA
 #include "CudaMatMul.hpp"
 #include "CudaOps.hpp"
+#include "CudaPool.hpp"
 #endif
 
 static const size_t VOCAB_SIZE  = 4096;
@@ -126,6 +127,7 @@ int main()
     std::cout << loader.decode(generated) << "\n";
 
 #ifdef USE_CUDA
+    cudaPoolFlush();
     cudaMatMulShutdown();
 #endif
     return 0;

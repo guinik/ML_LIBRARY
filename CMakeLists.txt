@@ -28,6 +28,7 @@ if(USE_CUDA)
     list(APPEND ML_SOURCES src/CudaMatMul.cu)
     list(APPEND ML_SOURCES src/CudaOps.cu)
     list(APPEND ML_SOURCES src/CudaOptimizer.cu)
+    list(APPEND ML_SOURCES src/CudaPool.cu)
 endif()
 
 set(ML_HEADERS
@@ -43,6 +44,7 @@ set(ML_HEADERS
 	include/DataLoader.hpp
 	include/CudaMatMul.hpp
 	include/CudaOps.hpp
+	include/CudaPool.hpp
 )
 
 

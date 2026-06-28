@@ -1,4 +1,5 @@
 #include "CudaOps.hpp"
+#include "CudaPool.hpp"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <stdexcept>
@@ -16,21 +17,12 @@
         } \
     } while (0)
 
-struct CudaDeleter
-{
-    void operator()(float* p) const
-    {
-        if (p)
-        {
-            cudaFree(p);
-        }
-    }
-};
-
 static Tensor makeCudaTensor(const std::vector<size_t>& shape, float* dPtr)
 {
+    size_t n = 1;
+    for (auto d : shape) { n *= d; }
     Tensor t(shape.size(), shape);
-    t.d_data = std::shared_ptr<float>(dPtr, CudaDeleter{});
+    t.d_data = std::shared_ptr<float>(dPtr, PoolDeleter{n});
     return t;
 }
 
@@ -38,10 +30,11 @@ static Tensor makeZeroCudaTensor(const std::vector<size_t>& shape)
 {
     size_t n = 1;
     for (auto d : shape) { n *= d; }
-    float* dPtr = nullptr;
-    CUDA_CHECK(cudaMalloc(&dPtr, n * sizeof(float)));
-    CUDA_CHECK(cudaMemset(dPtr, 0, n * sizeof(float)));
-    return makeCudaTensor(shape, dPtr);
+    float* dPtr = cudaPoolAlloc(n);
+    CUDA_CHECK(cudaMemsetAsync(dPtr, 0, n * sizeof(float)));
+    Tensor t(shape.size(), shape);
+    t.d_data = std::shared_ptr<float>(dPtr, PoolDeleter{n});
+    return t;
 }
 
 static std::vector<size_t> broadcastShape(
@@ -437,20 +430,17 @@ static Tensor broadcastBinop(const Tensor& A, const Tensor& B, int op)
     size_t total = 1;
     for (auto d : outShape) { total *= d; }
 
-    // Pad A and B shapes/strides to outShape rank, then to 4D
     auto shA = A.shape, shB = B.shape;
     auto stA = A.strides, stB = B.strides;
     while (shA.size() < outShape.size()) { shA.insert(shA.begin(), 1); stA.insert(stA.begin(), 0); }
     while (shB.size() < outShape.size()) { shB.insert(shB.begin(), 1); stB.insert(stB.begin(), 0); }
 
-    // Zero strides for broadcast dims
     for (size_t i = 0; i < outShape.size(); i++)
     {
         if (shA[i] == 1 && outShape[i] != 1) { stA[i] = 0; }
         if (shB[i] == 1 && outShape[i] != 1) { stB[i] = 0; }
     }
 
-    // Pad to 4D
     auto out4 = outShape;
     while (out4.size() < 4) { out4.insert(out4.begin(), 1); stA.insert(stA.begin(), 0); stB.insert(stB.begin(), 0); }
 
@@ -462,8 +452,7 @@ static Tensor broadcastBinop(const Tensor& A, const Tensor& B, int op)
         sB4[i] = (int)stB[i];
     }
 
-    float* dC = nullptr;
-    CUDA_CHECK(cudaMalloc(&dC, total * sizeof(float)));
+    float* dC = cudaPoolAlloc(total);
     int threads = 256;
     int blocks = ((int)total + threads - 1) / threads;
     broadcastBinopKernel<<<blocks, threads>>>(
@@ -495,8 +484,7 @@ Tensor cudaScale(const Tensor& A, float factor)
 {
     A.toGPU();
     int n = (int)A.data->size();
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, n * sizeof(float)));
+    float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
     scaleKernel<<<blocks, threads>>>(A.d_data.get(), dOut, factor, n);
@@ -507,8 +495,7 @@ Tensor cudaRelu(const Tensor& A)
 {
     A.toGPU();
     int n = (int)A.data->size();
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, n * sizeof(float)));
+    float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
     reluKernel<<<blocks, threads>>>(A.d_data.get(), dOut, n);
@@ -520,8 +507,7 @@ Tensor cudaReluBackward(const Tensor& input, const Tensor& gradOutput)
     input.toGPU();
     gradOutput.toGPU();
     int n = (int)input.data->size();
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, n * sizeof(float)));
+    float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
     reluBackwardKernel<<<blocks, threads>>>(input.d_data.get(), gradOutput.d_data.get(), dOut, n);
@@ -532,8 +518,7 @@ Tensor cudaSigmoid(const Tensor& A)
 {
     A.toGPU();
     int n = (int)A.data->size();
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, n * sizeof(float)));
+    float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
     sigmoidKernel<<<blocks, threads>>>(A.d_data.get(), dOut, n);
@@ -545,8 +530,7 @@ Tensor cudaSigmoidBackward(const Tensor& output, const Tensor& gradOutput)
     output.toGPU();
     gradOutput.toGPU();
     int n = (int)output.data->size();
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, n * sizeof(float)));
+    float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
     sigmoidBackwardKernel<<<blocks, threads>>>(output.d_data.get(), gradOutput.d_data.get(), dOut, n);
@@ -557,8 +541,7 @@ Tensor cudaSquare(const Tensor& A)
 {
     A.toGPU();
     int n = (int)A.data->size();
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, n * sizeof(float)));
+    float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
     squareKernel<<<blocks, threads>>>(A.d_data.get(), dOut, n);
@@ -570,8 +553,7 @@ Tensor cudaSquareBackward(const Tensor& input, const Tensor& gradOutput)
     input.toGPU();
     gradOutput.toGPU();
     int n = (int)input.data->size();
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, n * sizeof(float)));
+    float* dOut = cudaPoolAlloc((size_t)n);
     int threads = 256;
     int blocks = (n + threads - 1) / threads;
     squareBackwardKernel<<<blocks, threads>>>(input.d_data.get(), gradOutput.d_data.get(), dOut, n);
@@ -581,10 +563,10 @@ Tensor cudaSquareBackward(const Tensor& input, const Tensor& gradOutput)
 Tensor cudaSoftmax(const Tensor& A)
 {
     A.toGPU();
+    size_t n = A.data->size();
     size_t cols = A.shape.back();
-    size_t rows = A.data->size() / cols;
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, A.data->size() * sizeof(float)));
+    size_t rows = n / cols;
+    float* dOut = cudaPoolAlloc(n);
     int threads = 256;
     size_t smem = threads * sizeof(float);
     softmaxKernel<<<(int)rows, threads, smem>>>(A.d_data.get(), dOut, (int)rows, (int)cols);
@@ -595,10 +577,10 @@ Tensor cudaSoftmaxBackward(const Tensor& output, const Tensor& gradOutput)
 {
     output.toGPU();
     gradOutput.toGPU();
+    size_t n = output.data->size();
     size_t cols = output.shape.back();
-    size_t rows = output.data->size() / cols;
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, output.data->size() * sizeof(float)));
+    size_t rows = n / cols;
+    float* dOut = cudaPoolAlloc(n);
     int threads = 256;
     size_t smem = threads * sizeof(float);
     softmaxBackwardKernel<<<(int)rows, threads, smem>>>(
@@ -609,10 +591,10 @@ Tensor cudaSoftmaxBackward(const Tensor& output, const Tensor& gradOutput)
 Tensor cudaLayerNorm(const Tensor& A, float eps)
 {
     A.toGPU();
+    size_t n = A.data->size();
     size_t cols = A.shape.back();
-    size_t rows = A.data->size() / cols;
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, A.data->size() * sizeof(float)));
+    size_t rows = n / cols;
+    float* dOut = cudaPoolAlloc(n);
     int threads = 256;
     size_t smem = threads * sizeof(float);
     layerNormKernel<<<(int)rows, threads, smem>>>(A.d_data.get(), dOut, (int)rows, (int)cols, eps);
@@ -624,10 +606,10 @@ Tensor cudaLayerNormBackward(const Tensor& x, const Tensor& xhat, const Tensor& 
     x.toGPU();
     xhat.toGPU();
     gradOutput.toGPU();
+    size_t n = x.data->size();
     size_t cols = x.shape.back();
-    size_t rows = x.data->size() / cols;
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, x.data->size() * sizeof(float)));
+    size_t rows = n / cols;
+    float* dOut = cudaPoolAlloc(n);
     int threads = 256;
     size_t smem = 2 * threads * sizeof(float);
     layerNormBackwardKernel<<<(int)rows, threads, smem>>>(
@@ -640,13 +622,12 @@ Tensor cudaCausalMask(const Tensor& A)
 {
     A.toGPU();
     int seq = (int)A.shape.back();
-    int total = (int)A.data->size();
-    int numMatrices = total / (seq * seq);
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, total * sizeof(float)));
-    CUDA_CHECK(cudaMemcpy(dOut, A.d_data.get(), total * sizeof(float), cudaMemcpyDeviceToDevice));
+    size_t total = A.data->size();
+    int numMatrices = (int)total / (seq * seq);
+    float* dOut = cudaPoolAlloc(total);
+    CUDA_CHECK(cudaMemcpyAsync(dOut, A.d_data.get(), total * sizeof(float), cudaMemcpyDeviceToDevice));
     int threads = 256;
-    int blocks = (total + threads - 1) / threads;
+    int blocks = ((int)total + threads - 1) / threads;
     causalMaskKernel<<<blocks, threads>>>(dOut, numMatrices, seq);
     return makeCudaTensor(A.shape, dOut);
 }
@@ -659,8 +640,8 @@ Tensor cudaEmbeddingForward(const Tensor& ids, const Tensor& weights)
     int embedDim = (int)weights.shape[1];
     auto outShape = ids.shape;
     outShape.push_back((size_t)embedDim);
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, numTokens * embedDim * sizeof(float)));
+    size_t n = (size_t)numTokens * (size_t)embedDim;
+    float* dOut = cudaPoolAlloc(n);
     embeddingForwardKernel<<<numTokens, embedDim>>>(
         ids.d_data.get(), weights.d_data.get(), dOut, numTokens, embedDim);
     return makeCudaTensor(outShape, dOut);
@@ -672,12 +653,11 @@ Tensor cudaEmbeddingBackwardWeights(const Tensor& ids, const Tensor& weightsRef,
     gradOutput.toGPU();
     int numTokens = (int)ids.data->size();
     int embedDim = (int)weightsRef.shape[1];
-    int vocabSize = (int)weightsRef.shape[0];
+    (void)weightsRef.shape[0];
     Tensor gradWeights = makeZeroCudaTensor(weightsRef.shape);
     embeddingBackwardKernel<<<numTokens, embedDim>>>(
         ids.d_data.get(), gradOutput.d_data.get(), gradWeights.d_data.get(),
         numTokens, embedDim);
-    (void)vocabSize;
     return gradWeights;
 }
 
@@ -688,8 +668,7 @@ Tensor cudaCrossEntropyForward(const Tensor& logits, const Tensor& targets)
     int vocabSize = (int)logits.shape.back();
     int rows = (int)(logits.data->size() / vocabSize);
     auto outShape = std::vector<size_t>(logits.shape.begin(), logits.shape.end() - 1);
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, rows * sizeof(float)));
+    float* dOut = cudaPoolAlloc((size_t)rows);
     int threads = 256;
     size_t smem = threads * sizeof(float);
     crossEntropyForwardKernel<<<rows, threads, smem>>>(
@@ -705,8 +684,8 @@ std::pair<Tensor, Tensor> cudaCrossEntropyBackward(
     gradOutput.toGPU();
     int vocabSize = (int)logits.shape.back();
     int rows = (int)(logits.data->size() / vocabSize);
-    float* dGrad = nullptr;
-    CUDA_CHECK(cudaMalloc(&dGrad, logits.data->size() * sizeof(float)));
+    size_t n = logits.data->size();
+    float* dGrad = cudaPoolAlloc(n);
     int threads = 256;
     size_t smem = threads * sizeof(float);
     crossEntropyBackwardKernel<<<rows, threads, smem>>>(
@@ -733,8 +712,7 @@ Tensor cudaUnbroadcast(const Tensor& grad, const std::vector<size_t>& targetShap
     size_t lastDim = 1;
     for (auto d : targetShape) { lastDim *= d; }
     grad.toGPU();
-    float* dOut = nullptr;
-    CUDA_CHECK(cudaMalloc(&dOut, lastDim * sizeof(float)));
+    float* dOut = cudaPoolAlloc(lastDim);
     int threads = 256;
     int blocks = ((int)lastDim + threads - 1) / threads;
     reduceLeadingKernel<<<blocks, threads>>>(grad.d_data.get(), dOut, (int)leadTotal, (int)lastDim);
