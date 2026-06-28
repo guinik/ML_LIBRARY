@@ -22,9 +22,10 @@ public:
 
 	void computeForward();
 	void computeBackward();
+	void cleanGradients();
 
 private:
-	const std::vector<std::shared_ptr<Node>> _executionOrder;// defined as forward pass order
+	const std::vector<std::shared_ptr<Node>> _executionOrder;
 
 
 };

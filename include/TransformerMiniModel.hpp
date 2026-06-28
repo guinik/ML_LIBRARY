@@ -28,7 +28,6 @@ struct TransformerMiniModel
     size_t paramCount() const;
 
 private:
-    void dfsCleanGradients(std::shared_ptr<Node> node);
     void registerLayer(const std::string& name, Layer& layer);
     void registerLayer(Layer& layer);
 
