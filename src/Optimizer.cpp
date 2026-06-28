@@ -1,6 +1,9 @@
 #include "Optimizer.hpp"
 #include <algorithm>
 #include <cmath>
+#ifdef USE_CUDA
+#include "CudaMatMul.hpp"
+#endif
 
 AdamOptimizer::AdamOptimizer(std::vector<std::shared_ptr<Node>> parameterPtrList) : parameterNodePtrs(parameterPtrList)
 {
@@ -38,6 +41,9 @@ void AdamOptimizer::applyGradients(float learningRate)
 
 			paramValues[paramIdx] -= learningRate *(firstMomentCorrected) / (std::sqrt(secondMomentCorrected) + eps);
 		}
+#ifdef USE_CUDA
+		parameterNodePtrs[i]->param.value.invalidateGPU();
+#endif
 	}
 
 };

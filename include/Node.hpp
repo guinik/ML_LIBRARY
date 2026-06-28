@@ -17,6 +17,7 @@ struct Operation
 	virtual std::vector<Tensor> backward(const std::vector<Tensor>& inputs,
 		const Tensor& outputs,
 		const Tensor& gradOutput) const = 0;
+	virtual bool isGpuOp() const { return false; }
 };
 
 
@@ -31,13 +32,29 @@ struct Node
 	std::array <std::shared_ptr<Node>, 2> children = {nullptr, nullptr};
 	std::shared_ptr<Operation> op;
 
-	void forward() 
+	void forward()
 	{
-		if (!op) return;
-		std::vector<Tensor> inputTensor;
-		for(auto& child : children)
+		if (!op)
 		{
-			if (!child) continue;
+			return;
+		}
+		std::vector<Tensor> inputTensor;
+		for (auto& child : children)
+		{
+			if (!child)
+			{
+				continue;
+			}
+#ifdef USE_CUDA
+			if (op->isGpuOp())
+			{
+				child->param.value.toGPU();
+			}
+			else
+			{
+				child->param.value.toCPU();
+			}
+#endif
 			inputTensor.push_back(child->param.value);
 		}
 		param.value = op->forward(inputTensor);
@@ -45,29 +62,56 @@ struct Node
 
 	void backward()
 	{
-		if (!op) return;
+		if (!op)
+		{
+			return;
+		}
 		std::vector<Tensor> inputTensor;
 		for (auto& child : children)
 		{
-			if (!child) continue;
+			if (!child)
+			{
+				continue;
+			}
+#ifdef USE_CUDA
+			if (op->isGpuOp())
+			{
+				child->param.value.toGPU();
+			}
+			else
+			{
+				child->param.value.toCPU();
+			}
+#endif
 			inputTensor.push_back(child->param.value);
 		}
+#ifdef USE_CUDA
+		if (!op->isGpuOp())
+		{
+			param.value.toCPU();
+			param.grad.toCPU();
+		}
+#endif
 		std::vector<Tensor> gradResult = op->backward(inputTensor, param.value, param.grad);
 		for (size_t i{0}; i < children.size(); i++)
 		{
-			if (!children[i]) continue;
-			if(children[i]->param.grad.dimensions == 0)
+			if (!children[i])
+			{
+				continue;
+			}
+#ifdef USE_CUDA
+			gradResult[i].toCPU();
+#endif
+			if (children[i]->param.grad.dimensions == 0)
 			{
 				children[i]->param.grad = gradResult[i];
 			}
 			else
 			{
 				children[i]->param.grad = children[i]->param.grad + gradResult[i];
-
 			}
 		}
-
-	};
+	}
 };
 
 
@@ -109,6 +153,7 @@ struct MatMulOperation : Operation
 		const std::vector<Tensor>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
 };
 
 struct ReluOperation : Operation

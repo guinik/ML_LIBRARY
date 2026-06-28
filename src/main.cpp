@@ -11,7 +11,7 @@
 #endif
 
 static const size_t VOCAB_SIZE  = 4096;
-static const size_t SEQ_LEN     = 32;
+static const size_t SEQ_LEN     = 64;
 static const size_t EMBED_DIM   = 128;
 static const size_t DK          = 128;
 static const size_t NUM_LAYERS  = 4;

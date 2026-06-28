@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include <memory>
+#include <functional>
 
 
 struct AbstractTensor
@@ -33,7 +34,11 @@ struct Tensor : AbstractTensor
 	Tensor(const Tensor& other)
 		: shape(other.shape), strides(other.strides),
 		  data(other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr),
-		  dimensions(other.dimensions) {}
+		  dimensions(other.dimensions)
+#ifdef USE_CUDA
+		, d_data(other.d_data)
+#endif
+	{}
 
 	Tensor& operator=(const Tensor& other)
 	{
@@ -43,6 +48,9 @@ struct Tensor : AbstractTensor
 			strides    = other.strides;
 			data       = other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr;
 			dimensions = other.dimensions;
+#ifdef USE_CUDA
+			d_data     = other.d_data;
+#endif
 		}
 		return *this;
 	}
@@ -61,6 +69,14 @@ struct Tensor : AbstractTensor
 	std::vector<size_t> strides;
 	std::shared_ptr<std::vector<float>> data;
 	size_t dimensions;
+
+#ifdef USE_CUDA
+	mutable std::shared_ptr<float> d_data;
+	void toGPU() const;
+	void toCPU() const;
+	void invalidateGPU() const;
+	bool onGPU() const { return d_data != nullptr; }
+#endif
 
 	void transpose();
 	void fillValues(float value);
