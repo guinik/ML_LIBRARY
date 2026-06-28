@@ -8,6 +8,7 @@
 #include <fstream>
 #ifdef USE_CUDA
 #include "CudaMatMul.hpp"
+#include "CudaOps.hpp"
 #endif
 
 static const size_t VOCAB_SIZE  = 4096;

@@ -129,6 +129,9 @@ std::map<std::string, Tensor> TransformerMiniModel::stateDict() const
     std::map<std::string, Tensor> sd;
     for (auto& [name, node] : _namedParams)
     {
+#ifdef USE_CUDA
+        node->param.value.toCPU();
+#endif
         sd[name] = node->param.value;
     }
     return sd;

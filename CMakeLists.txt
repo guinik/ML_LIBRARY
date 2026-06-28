@@ -27,6 +27,7 @@ set(ML_SOURCES
 if(USE_CUDA)
     list(APPEND ML_SOURCES src/CudaMatMul.cu)
     list(APPEND ML_SOURCES src/CudaOps.cu)
+    list(APPEND ML_SOURCES src/CudaOptimizer.cu)
 endif()
 
 set(ML_HEADERS
