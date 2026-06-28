@@ -50,6 +50,29 @@ int argmax(const float* row, size_t n)
     return best;
 }
 
+static void generateSample(TransformerMiniModel& model, DataLoader& loader)
+{
+    Tensor genInput(2, {1, SEQ_LEN});
+    genInput.fillValues(2.0f);
+
+    Tensor dummy(2, {1, SEQ_LEN});
+    dummy.fillValues(0.0f);
+
+    std::vector<uint16_t> generated;
+    for (size_t s = 0; s < SEQ_LEN - 1; s++)
+    {
+        Tensor out = model.forward(genInput, dummy);
+#ifdef USE_CUDA
+        out.toCPU();
+#endif
+        const float* row = out.data->data() + s * VOCAB_SIZE;
+        int next = argmax(row, VOCAB_SIZE);
+        generated.push_back(static_cast<uint16_t>(next));
+        (*genInput.data)[s + 1] = static_cast<float>(next);
+    }
+    std::cout << loader.decode(generated) << "\n";
+}
+
 int main()
 {
     srand(42);
@@ -113,6 +136,8 @@ int main()
         {
             model.save("../tinystories.mlt");
             std::cout << "Checkpoint saved at step " << step << "\n";
+            std::cout << "Sample: ";
+            generateSample(model, loader);
         }
     }
 
@@ -120,27 +145,7 @@ int main()
     std::cout << "\nSaved to tinystories.mlt\n";
 
     std::cout << "\n--- Generation ---\n";
-
-    Tensor genInput(2, {1, SEQ_LEN});
-    genInput.fillValues(2.0f); // <EOS> as seed
-
-    Tensor dummy(2, {1, SEQ_LEN});
-    dummy.fillValues(0.0f);
-
-    std::vector<uint16_t> generated;
-    for (size_t step = 0; step < SEQ_LEN - 1; step++)
-    {
-        Tensor out = model.forward(genInput, dummy);
-#ifdef USE_CUDA
-        out.toCPU();
-#endif
-        const float* row = out.data->data() + step * VOCAB_SIZE;
-        int next = argmax(row, VOCAB_SIZE);
-        generated.push_back(static_cast<uint16_t>(next));
-        (*genInput.data)[step + 1] = static_cast<float>(next);
-    }
-
-    std::cout << loader.decode(generated) << "\n";
+    generateSample(model, loader);
 
 #ifdef USE_CUDA
     cudaPoolFlush();
