@@ -71,6 +71,9 @@ int main()
         if (step % LOG_EVERY == 0 && step > 0)
         {
             float loss = 0.0f;
+#ifdef USE_CUDA
+            model._lossNode->param.value.toCPU();
+#endif
             for (float v : *model._lossNode->param.value.data)
             {
                 loss += v;
@@ -110,6 +113,9 @@ int main()
     for (size_t step = 0; step < SEQ_LEN - 1; step++)
     {
         Tensor out = model.forward(genInput, dummy);
+#ifdef USE_CUDA
+        out.toCPU();
+#endif
         const float* row = out.data->data() + step * VOCAB_SIZE;
         int next = argmax(row, VOCAB_SIZE);
         generated.push_back(static_cast<uint16_t>(next));
