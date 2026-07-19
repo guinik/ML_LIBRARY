@@ -209,14 +209,49 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
     // cuBLAS operand and A as the "right" one, with M/N swapped.
     cublasOperation_t opLeft  = tB ? CUBLAS_OP_T : CUBLAS_OP_N;
     cublasOperation_t opRight = tA ? CUBLAS_OP_T : CUBLAS_OP_N;
-    int64_t m = (int64_t)N;
-    int64_t n = (int64_t)M;
-    int64_t k = (int64_t)K;
+    int64_t cublasM = (int64_t)N;   // cublas "m" = our N
+    int64_t cublasN = (int64_t)M;   // cublas "n" = our M
+    int64_t cublasK = (int64_t)K;
     int64_t ldLeft  = tB ? (int64_t)K : (int64_t)N;
     int64_t ldRight = tA ? (int64_t)M : (int64_t)K;
     int64_t ldC     = (int64_t)N;
 
-    MatmulShapeKey key{ m, n, k, (int64_t)batchCount, opLeft, opRight,
+    // If exactly one operand is broadcast across the batch dimension (the
+    // "activations @ shared weight" pattern -- every forward Dense/attention
+    // projection, and the input-side gradient in backward), fold the batch
+    // dimension directly into cublasM/cublasN instead of driving a strided
+    // batch GEMM. Row-major [batch, rows, cols] and [(batch*rows), cols] are
+    // the exact same memory layout, so this is a free reshape that turns many
+    // small batched GEMMs into one large, better-utilized GEMM -- the same
+    // approach frameworks like PyTorch use for Linear layers. The broadcast
+    // operand (the weight) is untouched either way since it has no batch
+    // dimension to begin with.
+    bool bBroadcasts = (strideDevB == 0) && (batchCount > 1);
+    bool aBroadcasts = (strideDevA == 0) && (batchCount > 1);
+
+    int64_t effBatchCount = (int64_t)batchCount;
+    long long effStrideLeft  = strideDevB;
+    long long effStrideRight = strideDevA;
+    long long effStrideC     = strideDevC;
+
+    if (bBroadcasts && !aBroadcasts)
+    {
+        cublasN *= (int64_t)batchCount;
+        effBatchCount = 1;
+        effStrideLeft = 0;
+        effStrideRight = 0;
+        effStrideC = 0;
+    }
+    else if (aBroadcasts && !bBroadcasts)
+    {
+        cublasM *= (int64_t)batchCount;
+        effBatchCount = 1;
+        effStrideLeft = 0;
+        effStrideRight = 0;
+        effStrideC = 0;
+    }
+
+    MatmulShapeKey key{ cublasM, cublasN, cublasK, effBatchCount, opLeft, opRight,
                          strideDevB == 0, strideDevA == 0 };
 
     auto it = g_ltPlans.find(key);
@@ -227,22 +262,22 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
         CUBLASLT_CHECK(cublasLtMatmulDescSetAttribute(plan.opDesc, CUBLASLT_MATMUL_DESC_TRANSA, &opLeft, sizeof(opLeft)));
         CUBLASLT_CHECK(cublasLtMatmulDescSetAttribute(plan.opDesc, CUBLASLT_MATMUL_DESC_TRANSB, &opRight, sizeof(opRight)));
 
-        int64_t leftRows  = (opLeft  == CUBLAS_OP_N) ? m : k;
-        int64_t leftCols  = (opLeft  == CUBLAS_OP_N) ? k : m;
-        int64_t rightRows = (opRight == CUBLAS_OP_N) ? k : n;
-        int64_t rightCols = (opRight == CUBLAS_OP_N) ? n : k;
+        int64_t leftRows  = (opLeft  == CUBLAS_OP_N) ? cublasM : cublasK;
+        int64_t leftCols  = (opLeft  == CUBLAS_OP_N) ? cublasK : cublasM;
+        int64_t rightRows = (opRight == CUBLAS_OP_N) ? cublasK : cublasN;
+        int64_t rightCols = (opRight == CUBLAS_OP_N) ? cublasN : cublasK;
 
         CUBLASLT_CHECK(cublasLtMatrixLayoutCreate(&plan.leftDesc,  CUDA_R_32F, (uint64_t)leftRows,  (uint64_t)leftCols,  ldLeft));
         CUBLASLT_CHECK(cublasLtMatrixLayoutCreate(&plan.rightDesc, CUDA_R_32F, (uint64_t)rightRows, (uint64_t)rightCols, ldRight));
-        CUBLASLT_CHECK(cublasLtMatrixLayoutCreate(&plan.cDesc,     CUDA_R_32F, (uint64_t)m, (uint64_t)n, ldC));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutCreate(&plan.cDesc,     CUDA_R_32F, (uint64_t)cublasM, (uint64_t)cublasN, ldC));
 
-        int32_t batchCountI = (int32_t)batchCount;
+        int32_t batchCountI = (int32_t)effBatchCount;
         CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.leftDesc,  CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batchCountI, sizeof(batchCountI)));
         CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.rightDesc, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batchCountI, sizeof(batchCountI)));
         CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.cDesc,     CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batchCountI, sizeof(batchCountI)));
-        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.leftDesc,  CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &strideDevB, sizeof(strideDevB)));
-        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.rightDesc, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &strideDevA, sizeof(strideDevA)));
-        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.cDesc,     CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &strideDevC, sizeof(strideDevC)));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.leftDesc,  CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &effStrideLeft,  sizeof(effStrideLeft)));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.rightDesc, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &effStrideRight, sizeof(effStrideRight)));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.cDesc,     CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &effStrideC,     sizeof(effStrideC)));
 
         cublasLtMatmulPreference_t pref = nullptr;
         CUBLASLT_CHECK(cublasLtMatmulPreferenceCreate(&pref));

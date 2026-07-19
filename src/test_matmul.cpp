@@ -100,6 +100,9 @@ int main()
         {"transpose-A, batched, no broadcast",          {2, 3, 5}, true,  {2, 3, 4}, false},
         {"transpose-A + transpose-B, batched",          {2, 3, 5}, true,  {4, 3},    true},
         {"no-transpose, batched, both operands batched, square-ish", {3, 6, 6}, false, {3, 6, 6}, false},
+        {"transpose-B, weight broadcast, model-scale batch (batch-fold path)", {16, 64, 256}, false, {256, 256}, true},
+        {"no-transpose, A broadcasts (weight-first, symmetric batch-fold path)", {5, 3}, false, {2, 3, 4}, false},
+        {"transpose-A, A broadcasts, B batched", {3, 5}, true, {2, 3, 4}, false},
     };
 
     int failures = 0;
