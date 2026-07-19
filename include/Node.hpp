@@ -1,5 +1,5 @@
 #pragma once
-#include <array>
+#include <vector>
 #include <utility>
 #include "Tensor.hpp"
 #include "Parameter.hpp"
@@ -25,7 +25,7 @@ struct Operation
 };
 
 
-// node should be at most binary. 
+// children may be any arity, gradResult from op->backward must match children.size()
 struct Node
 {
 	Node(std::shared_ptr<Operation> inputOp) : op(std::move(inputOp)) {};
@@ -33,7 +33,7 @@ struct Node
 
 	~Node() = default;
 	Parameter param{};
-	std::array <std::shared_ptr<Node>, 2> children = {nullptr, nullptr};
+	std::vector<std::shared_ptr<Node>> children;
 	std::shared_ptr<Operation> op;
 
 	void forward()

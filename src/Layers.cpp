@@ -2,16 +2,27 @@
 #include "Tensor.hpp"
 #include <string>
 #include <cmath>
-inline std::shared_ptr<Node> makeNode(std::shared_ptr<Operation> op, std::shared_ptr<Node> a, 
+inline std::shared_ptr<Node> makeNode(std::shared_ptr<Operation> op, std::shared_ptr<Node> a,
 	std::shared_ptr<Node> b = nullptr)
 {
-
-	
 	std::shared_ptr<Node> resultNode = std::make_shared<Node>(std::move(op));
-	resultNode->children = { std::move(a), std::move(b) };
-
+	if (b)
+	{
+		resultNode->children = { std::move(a), std::move(b) };
+	}
+	else
+	{
+		resultNode->children = { std::move(a) };
+	}
 	return resultNode;
+}
 
+inline std::shared_ptr<Node> makeNode3(std::shared_ptr<Operation> op, std::shared_ptr<Node> a,
+	std::shared_ptr<Node> b, std::shared_ptr<Node> c)
+{
+	std::shared_ptr<Node> resultNode = std::make_shared<Node>(std::move(op));
+	resultNode->children = { std::move(a), std::move(b), std::move(c) };
+	return resultNode;
 }
 
 std::shared_ptr<Node> operator+(std::shared_ptr<Node> a, std::shared_ptr<Node> b)
