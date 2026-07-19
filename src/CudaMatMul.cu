@@ -64,13 +64,34 @@ struct MatmulShapeKey
 
     bool operator<(const MatmulShapeKey& o) const
     {
-        if (m != o.m) return m < o.m;
-        if (n != o.n) return n < o.n;
-        if (k != o.k) return k < o.k;
-        if (batchCount != o.batchCount) return batchCount < o.batchCount;
-        if (opLeft != o.opLeft) return opLeft < o.opLeft;
-        if (opRight != o.opRight) return opRight < o.opRight;
-        if (bcastLeft != o.bcastLeft) return bcastLeft < o.bcastLeft;
+        if (m != o.m)
+        {
+            return m < o.m;
+        }
+        if (n != o.n)
+        {
+            return n < o.n;
+        }
+        if (k != o.k)
+        {
+            return k < o.k;
+        }
+        if (batchCount != o.batchCount)
+        {
+            return batchCount < o.batchCount;
+        }
+        if (opLeft != o.opLeft)
+        {
+            return opLeft < o.opLeft;
+        }
+        if (opRight != o.opRight)
+        {
+            return opRight < o.opRight;
+        }
+        if (bcastLeft != o.bcastLeft)
+        {
+            return bcastLeft < o.bcastLeft;
+        }
         return bcastRight < o.bcastRight;
     }
 };

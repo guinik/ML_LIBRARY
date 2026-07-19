@@ -119,6 +119,24 @@ namespace
 		return result;
 	}
 
+	// Zero-copy reshape: merges every leading dimension of a contiguous
+	// row-major tensor into one, e.g. [batch,seq,K] -> [(batch*seq),K].
+	// Shares the same underlying data/d_data buffer, no copy.
+	Tensor flattenLeadingDims(const Tensor& t)
+	{
+		size_t lastDim = t.shape.back();
+		size_t leading = t.nelems() / lastDim;
+		Tensor view;
+		view.dimensions = 2;
+		view.shape = { leading, lastDim };
+		view.strides = { lastDim, 1 };
+		view.data = t.data;
+#ifdef USE_CUDA
+		view.d_data = t.d_data;
+#endif
+		return view;
+	}
+
 #ifndef USE_CUDA
 	Tensor broadcastMultiply(const Tensor& A, const Tensor& B)
 	{
@@ -269,8 +287,27 @@ std::vector<Tensor> MatMulOperation::backward(const std::vector<const Tensor*>& 
 		leftGrad  = matMul(gradOutput,  *inputs[1], MatMulFlags::MATMUL_TRANSPOSE_B);
 		rightGrad = matMul(*inputs[0],  gradOutput, MatMulFlags::MATMUL_TRANSPOSE_A);
 	} else if (!tA && tB) {
-		leftGrad  = matMul(gradOutput, *inputs[1], MatMulFlags::MATMUL_NO_TRANSPOSES);
-		rightGrad = matMul(gradOutput, *inputs[0], MatMulFlags::MATMUL_TRANSPOSE_A);
+		leftGrad = matMul(gradOutput, *inputs[1], MatMulFlags::MATMUL_NO_TRANSPOSES);
+
+		// inputs[1] is the weight operand here (forward was x @ W^T). When it
+		// has no batch dimension of its own (the common case -- every Dense
+		// and attention-projection weight), computing rightGrad as a batched
+		// matmul followed by a separate reduce-over-batch is wasted work:
+		// folding batch*seq directly into the contraction dimension computes
+		// the already-reduced [N,K] weight gradient in one matmul, with the
+		// batch reduction happening for free as part of the sum over K. This
+		// is the same technique PyTorch's Linear layer backward uses.
+		bool weightBroadcastsOverBatch = inputs[1]->shape.size() < gradOutput.shape.size();
+		if (weightBroadcastsOverBatch)
+		{
+			Tensor gradFlat = flattenLeadingDims(gradOutput);
+			Tensor inFlat = flattenLeadingDims(*inputs[0]);
+			rightGrad = matMul(gradFlat, inFlat, MatMulFlags::MATMUL_TRANSPOSE_A);
+		}
+		else
+		{
+			rightGrad = matMul(gradOutput, *inputs[0], MatMulFlags::MATMUL_TRANSPOSE_A);
+		}
 	} else if (tA && !tB) {
 		leftGrad  = matMul(*inputs[1], gradOutput, MatMulFlags::MATMUL_TRANSPOSE_B);
 		rightGrad = matMul(*inputs[0], gradOutput, MatMulFlags::MATMUL_NO_TRANSPOSES);

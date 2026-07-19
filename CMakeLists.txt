@@ -93,4 +93,12 @@ if(USE_CUDA)
     endif()
 
     target_link_libraries(TEST_MATMUL PRIVATE ML_LIBRARY)
+
+    add_executable(TEST_WEIGHT_GRAD src/test_weight_grad.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_WEIGHT_GRAD PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_WEIGHT_GRAD PRIVATE ML_LIBRARY)
 endif()
