@@ -1,5 +1,6 @@
 #include "TransformerMiniModel.hpp"
 #include "Serialization.hpp"
+#include <utility>
 
 void TransformerMiniModel::registerLayer(const std::string& name, Layer& layer)
 {
@@ -79,9 +80,9 @@ Tensor TransformerMiniModel::forward(Tensor input, Tensor target)
         }
     }
 
-    _inputNode->param.value = input;
-    _posNode->param.value = pos;
-    _targetNode->param.value = target;
+    _inputNode->param.value = std::move(input);
+    _posNode->param.value = std::move(pos);
+    _targetNode->param.value = std::move(target);
 
     if (_executionGraph.has_value())
     {

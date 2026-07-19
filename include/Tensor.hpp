@@ -2,6 +2,7 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <utility>
 
 
 struct AbstractTensor
@@ -50,6 +51,30 @@ struct Tensor : AbstractTensor
 			dimensions = other.dimensions;
 #ifdef USE_CUDA
 			d_data     = other.d_data;
+#endif
+		}
+		return *this;
+	}
+
+	Tensor(Tensor&& other) noexcept
+		: shape(std::move(other.shape)), strides(std::move(other.strides)),
+		  data(std::move(other.data)),
+		  dimensions(other.dimensions)
+#ifdef USE_CUDA
+		, d_data(std::move(other.d_data))
+#endif
+	{}
+
+	Tensor& operator=(Tensor&& other) noexcept
+	{
+		if (this != &other)
+		{
+			shape      = std::move(other.shape);
+			strides    = std::move(other.strides);
+			data       = std::move(other.data);
+			dimensions = other.dimensions;
+#ifdef USE_CUDA
+			d_data     = std::move(other.d_data);
 #endif
 		}
 		return *this;

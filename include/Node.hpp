@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <utility>
 #include "Tensor.hpp"
 #include "Parameter.hpp"
 #ifdef USE_CUDA
@@ -104,7 +105,7 @@ struct Node
 			}
 			if (children[i]->param.grad.dimensions == 0)
 			{
-				children[i]->param.grad = gradResult[i];
+				children[i]->param.grad = std::move(gradResult[i]);
 			}
 			else
 			{
