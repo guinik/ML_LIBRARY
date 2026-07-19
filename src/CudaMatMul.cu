@@ -142,20 +142,19 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
     const float alpha = 1.0f;
     const float beta = 0.0f;
 
-    CUBLAS_CHECK(cublasSgemmStridedBatched(
+    CUBLAS_CHECK(cublasGemmStridedBatchedEx(
         g_handle,
         tB ? CUBLAS_OP_T : CUBLAS_OP_N,
         tA ? CUBLAS_OP_T : CUBLAS_OP_N,
         (int)N, (int)M, (int)K,
         &alpha,
-        B.d_data.get(), tB ? (int)K : (int)N,
-        strideDevB,
-        A.d_data.get(), tA ? (int)M : (int)K,
-        strideDevA,
+        B.d_data.get(), CUDA_R_32F, tB ? (int)K : (int)N, strideDevB,
+        A.d_data.get(), CUDA_R_32F, tA ? (int)M : (int)K, strideDevA,
         &beta,
-        d_C, (int)N,
-        strideDevC,
-        (int)batchCount
+        d_C, CUDA_R_32F, (int)N, strideDevC,
+        (int)batchCount,
+        CUBLAS_COMPUTE_32F,
+        CUBLAS_GEMM_DEFAULT
     ));
 
     Tensor result(resultShape.size(), resultShape);
