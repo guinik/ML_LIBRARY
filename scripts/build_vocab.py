@@ -43,7 +43,7 @@ def get_text(example, dataset_name):
     if dataset_name == "tinystories":
         return example["text"]
     lines = []
-    for i, utterance in enumerate(example["dialog"]):
+    for i, utterance in enumerate(example["utterances"]):
         speaker = "user" if i % 2 == 0 else "bot"
         lines.append(f"{speaker} {utterance.strip()}")
     return " ".join(lines)
