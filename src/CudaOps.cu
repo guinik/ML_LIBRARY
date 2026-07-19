@@ -325,6 +325,166 @@ __global__ void layerNormBackwardKernel(
     }
 }
 
+__global__ void layerNormAffineForwardKernel(
+    const float* in, const float* gamma, const float* beta, float* out,
+    int rows, int cols, float eps)
+{
+    extern __shared__ float smem[];
+    int row = blockIdx.x;
+    if (row >= rows) { return; }
+    const float* x = in + row * cols;
+    float* y = out + row * cols;
+
+    float localSum = 0.0f;
+    for (int i = threadIdx.x; i < cols; i += blockDim.x) { localSum += x[i]; }
+    smem[threadIdx.x] = localSum;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1)
+    {
+        if (threadIdx.x < s) { smem[threadIdx.x] += smem[threadIdx.x + s]; }
+        __syncthreads();
+    }
+    float mean = smem[0] / cols;
+    __syncthreads();
+
+    float localVar = 0.0f;
+    for (int i = threadIdx.x; i < cols; i += blockDim.x)
+    {
+        float d = x[i] - mean;
+        localVar += d * d;
+    }
+    smem[threadIdx.x] = localVar;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1)
+    {
+        if (threadIdx.x < s) { smem[threadIdx.x] += smem[threadIdx.x + s]; }
+        __syncthreads();
+    }
+    float invStd = rsqrtf(smem[0] / cols + eps);
+    __syncthreads();
+
+    for (int i = threadIdx.x; i < cols; i += blockDim.x)
+    {
+        float xhat = (x[i] - mean) * invStd;
+        y[i] = xhat * gamma[i] + beta[i];
+    }
+}
+
+__global__ void layerNormAffineDxKernel(
+    const float* x, const float* gamma, const float* dy,
+    float* dx, float* xhatOut,
+    int rows, int cols, float eps)
+{
+    extern __shared__ float smem[];
+    int row = blockIdx.x;
+    if (row >= rows) { return; }
+    const float* xr = x + row * cols;
+    const float* dyr = dy + row * cols;
+    float* dxr = dx + row * cols;
+    float* xhr = xhatOut + row * cols;
+
+    float localSum = 0.0f;
+    for (int i = threadIdx.x; i < cols; i += blockDim.x) { localSum += xr[i]; }
+    smem[threadIdx.x] = localSum;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1)
+    {
+        if (threadIdx.x < s) { smem[threadIdx.x] += smem[threadIdx.x + s]; }
+        __syncthreads();
+    }
+    float mean = smem[0] / cols;
+    __syncthreads();
+
+    float localVar = 0.0f;
+    for (int i = threadIdx.x; i < cols; i += blockDim.x)
+    {
+        float d = xr[i] - mean;
+        localVar += d * d;
+    }
+    smem[threadIdx.x] = localVar;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1)
+    {
+        if (threadIdx.x < s) { smem[threadIdx.x] += smem[threadIdx.x + s]; }
+        __syncthreads();
+    }
+    float invStd = rsqrtf(smem[0] / cols + eps);
+    __syncthreads();
+
+    float localSumDxhat = 0.0f, localSumDxhatXhat = 0.0f;
+    for (int i = threadIdx.x; i < cols; i += blockDim.x)
+    {
+        float xhat = (xr[i] - mean) * invStd;
+        float dxhat = dyr[i] * gamma[i];
+        xhr[i] = xhat;
+        localSumDxhat += dxhat;
+        localSumDxhatXhat += dxhat * xhat;
+    }
+    smem[threadIdx.x] = localSumDxhat;
+    smem[blockDim.x + threadIdx.x] = localSumDxhatXhat;
+    __syncthreads();
+    for (int s = blockDim.x / 2; s > 0; s >>= 1)
+    {
+        if (threadIdx.x < s)
+        {
+            smem[threadIdx.x] += smem[threadIdx.x + s];
+            smem[blockDim.x + threadIdx.x] += smem[blockDim.x + threadIdx.x + s];
+        }
+        __syncthreads();
+    }
+    float sumDxhat = smem[0];
+    float sumDxhatXhat = smem[blockDim.x];
+    __syncthreads();
+
+    float fn = (float)cols;
+    for (int i = threadIdx.x; i < cols; i += blockDim.x)
+    {
+        float xhat = (xr[i] - mean) * invStd;
+        float dxhat = dyr[i] * gamma[i];
+        dxr[i] = invStd * (dxhat - sumDxhat / fn - xhat * sumDxhatXhat / fn);
+    }
+}
+
+__global__ void layerNormGammaBetaBackwardKernel(
+    const float* dy, const float* xhat, float* dgamma, float* dbeta,
+    int rows, int cols)
+{
+    __shared__ float sGamma[32][9];
+    __shared__ float sBeta[32][9];
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int col = blockIdx.x * blockDim.x + tx;
+    float gammaSum = 0.0f;
+    float betaSum = 0.0f;
+    if (col < cols)
+    {
+        for (int r = ty; r < rows; r += blockDim.y)
+        {
+            float dyVal = dy[r * cols + col];
+            float xhatVal = xhat[r * cols + col];
+            gammaSum += dyVal * xhatVal;
+            betaSum += dyVal;
+        }
+    }
+    sGamma[tx][ty] = gammaSum;
+    sBeta[tx][ty] = betaSum;
+    __syncthreads();
+    for (int s = blockDim.y / 2; s > 0; s >>= 1)
+    {
+        if (ty < s)
+        {
+            sGamma[tx][ty] += sGamma[tx][ty + s];
+            sBeta[tx][ty] += sBeta[tx][ty + s];
+        }
+        __syncthreads();
+    }
+    if (ty == 0 && col < cols)
+    {
+        dgamma[col] = sGamma[tx][0];
+        dbeta[col] = sBeta[tx][0];
+    }
+}
+
 __global__ void embeddingForwardKernel(
     const float* ids, const float* weights, float* out,
     int numTokens, int embedDim)
@@ -657,6 +817,55 @@ Tensor cudaLayerNormBackward(const Tensor& x, const Tensor& xhat, const Tensor& 
         x.d_data.get(), xhat.d_data.get(), gradOutput.d_data.get(),
         dOut, (int)rows, (int)cols, eps);
     return makeCudaTensor(x.shape, dOut);
+}
+
+Tensor cudaLayerNormAffine(const Tensor& x, const Tensor& gamma, const Tensor& beta, float eps)
+{
+    x.toGPU();
+    gamma.toGPU();
+    beta.toGPU();
+    size_t n = x.nelems();
+    size_t cols = x.shape.back();
+    size_t rows = n / cols;
+    float* dOut = cudaPoolAlloc(n);
+    int threads = 256;
+    size_t smem = threads * sizeof(float);
+    layerNormAffineForwardKernel<<<(int)rows, threads, smem>>>(
+        x.d_data.get(), gamma.d_data.get(), beta.d_data.get(),
+        dOut, (int)rows, (int)cols, eps);
+    return makeCudaTensor(x.shape, dOut);
+}
+
+std::vector<Tensor> cudaLayerNormAffineBackward(const Tensor& x, const Tensor& gamma, const Tensor& gradOutput, float eps)
+{
+    x.toGPU();
+    gamma.toGPU();
+    gradOutput.toGPU();
+    size_t n = x.nelems();
+    size_t cols = x.shape.back();
+    size_t rows = n / cols;
+
+    float* dDx = cudaPoolAlloc(n);
+    float* dXhat = cudaPoolAlloc(n);
+    int threads = 256;
+    size_t smem = 2 * threads * sizeof(float);
+    layerNormAffineDxKernel<<<(int)rows, threads, smem>>>(
+        x.d_data.get(), gamma.d_data.get(), gradOutput.d_data.get(),
+        dDx, dXhat, (int)rows, (int)cols, eps);
+
+    float* dGamma = cudaPoolAlloc(cols);
+    float* dBeta = cudaPoolAlloc(cols);
+    dim3 gbThreads(32, 8);
+    int gbBlocks = ((int)cols + 31) / 32;
+    layerNormGammaBetaBackwardKernel<<<gbBlocks, gbThreads>>>(
+        gradOutput.d_data.get(), dXhat, dGamma, dBeta, (int)rows, (int)cols);
+
+    cudaPoolFree(dXhat, n);
+
+    Tensor dx = makeCudaTensor(x.shape, dDx);
+    Tensor dGammaT = makeCudaTensor(gamma.shape, dGamma);
+    Tensor dBetaT = makeCudaTensor(gamma.shape, dBeta);
+    return { dx, dGammaT, dBetaT };
 }
 
 Tensor cudaCausalMask(const Tensor& A)

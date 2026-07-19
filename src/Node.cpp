@@ -597,6 +597,111 @@ std::vector<Tensor> LayerNormOperation::backward(const std::vector<const Tensor*
 #endif
 }
 
+Tensor LayerNormAffineOperation::forward(const std::vector<const Tensor*>& inputs) const
+{
+#ifdef USE_CUDA
+	return cudaLayerNormAffine(*inputs[0], *inputs[1], *inputs[2], eps);
+#else
+	const Tensor& x = *inputs[0];
+	const Tensor& gamma = *inputs[1];
+	const Tensor& beta = *inputs[2];
+	size_t n = x.shape.back();
+	size_t totalRows = x.data->size() / n;
+	Tensor result(x.dimensions, x.shape);
+	const float* src = x.data->data();
+	const float* g = gamma.data->data();
+	const float* b = beta.data->data();
+	float* dst = result.data->data();
+	for (size_t row = 0; row < totalRows; row++)
+	{
+		size_t offset = row * n;
+		float mean = 0.0f;
+		for (size_t i = 0; i < n; i++)
+		{
+			mean += src[offset + i];
+		}
+		mean /= static_cast<float>(n);
+		float var = 0.0f;
+		for (size_t i = 0; i < n; i++)
+		{
+			float d = src[offset + i] - mean;
+			var += d * d;
+		}
+		var /= static_cast<float>(n);
+		float invStd = 1.0f / std::sqrt(var + eps);
+		for (size_t i = 0; i < n; i++)
+		{
+			float xhat = (src[offset + i] - mean) * invStd;
+			dst[offset + i] = xhat * g[i] + b[i];
+		}
+	}
+	return result;
+#endif
+}
+
+std::vector<Tensor> LayerNormAffineOperation::backward(
+	const std::vector<const Tensor*>& inputs,
+	const Tensor&,
+	const Tensor& gradOutput) const
+{
+#ifdef USE_CUDA
+	return cudaLayerNormAffineBackward(*inputs[0], *inputs[1], gradOutput, eps);
+#else
+	const Tensor& x = *inputs[0];
+	const Tensor& gamma = *inputs[1];
+	size_t n = x.shape.back();
+	size_t totalRows = x.data->size() / n;
+	Tensor dx(x.dimensions, x.shape);
+	Tensor dGamma(gamma.dimensions, gamma.shape);
+	Tensor dBeta(gamma.dimensions, gamma.shape);
+	dGamma.fillValues(0.0f);
+	dBeta.fillValues(0.0f);
+	const float* src = x.data->data();
+	const float* g = gamma.data->data();
+	const float* dy = gradOutput.data->data();
+	float* dxData = dx.data->data();
+	float* dGammaData = dGamma.data->data();
+	float* dBetaData = dBeta.data->data();
+	for (size_t row = 0; row < totalRows; row++)
+	{
+		size_t offset = row * n;
+		float mean = 0.0f;
+		for (size_t i = 0; i < n; i++)
+		{
+			mean += src[offset + i];
+		}
+		mean /= static_cast<float>(n);
+		float var = 0.0f;
+		for (size_t i = 0; i < n; i++)
+		{
+			float d = src[offset + i] - mean;
+			var += d * d;
+		}
+		var /= static_cast<float>(n);
+		float invStd = 1.0f / std::sqrt(var + eps);
+
+		float sumDxhat = 0.0f, sumDxhatXhat = 0.0f;
+		for (size_t i = 0; i < n; i++)
+		{
+			float xhat = (src[offset + i] - mean) * invStd;
+			float dxhat = dy[offset + i] * g[i];
+			sumDxhat += dxhat;
+			sumDxhatXhat += dxhat * xhat;
+			dGammaData[i] += dy[offset + i] * xhat;
+			dBetaData[i] += dy[offset + i];
+		}
+		float fn = static_cast<float>(n);
+		for (size_t i = 0; i < n; i++)
+		{
+			float xhat = (src[offset + i] - mean) * invStd;
+			float dxhat = dy[offset + i] * g[i];
+			dxData[offset + i] = invStd * (dxhat - sumDxhat / fn - xhat * sumDxhatXhat / fn);
+		}
+	}
+	return { dx, dGamma, dBeta };
+#endif
+}
+
 Tensor CausalMaskOperation::forward(const std::vector<const Tensor*>& inputs) const
 {
 #ifdef USE_CUDA

@@ -117,4 +117,12 @@ if(USE_CUDA)
     endif()
 
     target_link_libraries(TEST_DENSE_OP PRIVATE ML_LIBRARY)
+
+    add_executable(TEST_LAYERNORM_OP src/test_layernorm_op.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_LAYERNORM_OP PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_LAYERNORM_OP PRIVATE ML_LIBRARY)
 endif()

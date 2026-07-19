@@ -78,9 +78,7 @@ LayerNormLayer::LayerNormLayer(size_t dim, float inputEps) : eps(inputEps)
 
 std::shared_ptr<Node> LayerNormLayer::forward(const std::vector<std::shared_ptr<Node>>& inputsNodes)
 {
-	auto normed = makeNode(std::make_shared<LayerNormOperation>(eps), inputsNodes[0]);
-	auto scaled = multiply(normed, gamma);
-	return scaled + beta;
+	return makeNode3(std::make_shared<LayerNormAffineOperation>(eps), inputsNodes[0], gamma, beta);
 }
 
 

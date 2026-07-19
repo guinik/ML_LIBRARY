@@ -236,6 +236,19 @@ struct LayerNormOperation : Operation
 	bool isGpuOp() const override { return true; }
 };
 
+// fused normalize(x) * gamma + beta, children order is {x, gamma, beta}
+struct LayerNormAffineOperation : Operation
+{
+	float eps;
+	LayerNormAffineOperation(float inputEps = 1e-5f) : eps(inputEps) {}
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<const Tensor*>& inputs,
+		const Tensor& output,
+		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
+};
+
 struct CrossEntropyOperation : Operation
 {
 	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
