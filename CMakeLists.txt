@@ -76,3 +76,11 @@ if(NOT MSVC)
 endif()
 
 target_link_libraries(EXECUTE PRIVATE ML_LIBRARY)
+
+add_executable(BENCHMARK src/benchmark.cpp)
+
+if(NOT MSVC)
+    target_compile_options(BENCHMARK PRIVATE -O3)
+endif()
+
+target_link_libraries(BENCHMARK PRIVATE ML_LIBRARY)

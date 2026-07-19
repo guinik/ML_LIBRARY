@@ -136,3 +136,23 @@ drive.mount('/content/drive')
 If a session disconnects mid-run, just re-clone/build and copy the checkpoint back from Drive into the repo root before re-running `./EXECUTE` — it auto-resumes from `../tinystories.mlt` if present.
 
 That covers running training. Saving the final model off Colab (via the same `cp` to Drive, or `files.download(...)`) and serving it are separate next steps once training is where you want it.
+
+## Benchmark: ML_LIBRARY vs PyTorch
+
+`src/benchmark.cpp` (target `BENCHMARK`) and `scripts/benchmark_pytorch.py` run the *same* model — same architecture (embedding + learned positional embedding, 6 single-head causal attention blocks with post-attention/post-FFN LayerNorm, `embed_dim × 4` ReLU FFN, `4096`-vocab output head), same dimensions (`embed_dim=256`, `seq_len=64`, `batch=16`), and the same Adam hyperparameters (`lr=3e-4`, `β1=0.9`, `β2=0.999`, `eps=1e-8`). Both use synthetic random token IDs (no data loading) so the timing only reflects forward + backward + optimizer-step compute, with 10 untimed warmup steps followed by 50 timed steps and an explicit device sync before/after timing.
+
+Build and run the C++ side (CUDA build, from `build/`):
+
+```bash
+cmake --build build -j
+cd build
+./BENCHMARK
+```
+
+Run the PyTorch side (Colab already has `torch` installed):
+
+```bash
+python scripts/benchmark_pytorch.py
+```
+
+Each prints parameter count, total time, ms/step, and tokens/sec — compare those numbers directly. Since both use the same seed data, this isolates "how fast is the custom C++/CUDA kernel + autograd stack" vs. "how fast is PyTorch/cuBLAS" for this exact model shape, without the data pipeline or checkpointing in the way.
