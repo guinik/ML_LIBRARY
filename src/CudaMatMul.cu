@@ -214,7 +214,6 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
     int64_t cublasK = (int64_t)K;
     int64_t ldLeft  = tB ? (int64_t)K : (int64_t)N;
     int64_t ldRight = tA ? (int64_t)M : (int64_t)K;
-    int64_t ldC     = (int64_t)N;
 
     // If exactly one operand is broadcast across the batch dimension (the
     // "activations @ shared weight" pattern -- every forward Dense/attention
@@ -226,15 +225,23 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
     // approach frameworks like PyTorch use for Linear layers. The broadcast
     // operand (the weight) is untouched either way since it has no batch
     // dimension to begin with.
+    //
+    // This is only a valid free reshape when batch and the folded dimension
+    // are ADJACENT in physical memory: A is physically [batch,M,K] (batch,M
+    // adjacent) only when tA is false -- if tA is true, A is physically
+    // [batch,K,M] and batch/M are separated by K, so folding would require
+    // real data movement. Symmetric argument for B requires tB true.
     bool bBroadcasts = (strideDevB == 0) && (batchCount > 1);
     bool aBroadcasts = (strideDevA == 0) && (batchCount > 1);
+    bool canFoldIntoM = bBroadcasts && !aBroadcasts && !tA;
+    bool canFoldIntoN = aBroadcasts && !bBroadcasts && tB;
 
     int64_t effBatchCount = (int64_t)batchCount;
     long long effStrideLeft  = strideDevB;
     long long effStrideRight = strideDevA;
     long long effStrideC     = strideDevC;
 
-    if (bBroadcasts && !aBroadcasts)
+    if (canFoldIntoM)
     {
         cublasN *= (int64_t)batchCount;
         effBatchCount = 1;
@@ -242,7 +249,7 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
         effStrideRight = 0;
         effStrideC = 0;
     }
-    else if (aBroadcasts && !bBroadcasts)
+    else if (canFoldIntoN)
     {
         cublasM *= (int64_t)batchCount;
         effBatchCount = 1;
@@ -250,6 +257,12 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
         effStrideRight = 0;
         effStrideC = 0;
     }
+
+    // C is our own freshly-allocated, always-tightly-packed buffer, so its
+    // leading dimension must track cublasM directly -- including when
+    // canFoldIntoN grew it, since unlike leftDesc/rightDesc there's no
+    // transpose to route the folded value into the (unconstrained) cols slot.
+    int64_t ldC = cublasM;
 
     MatmulShapeKey key{ cublasM, cublasN, cublasK, effBatchCount, opLeft, opRight,
                          strideDevB == 0, strideDevA == 0 };
