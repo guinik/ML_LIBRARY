@@ -95,7 +95,7 @@ int main()
         }
     }
 
-    std::cout << "Training on TinyStories (" << STEPS << " steps, batch=" << BATCH_SIZE << ")...\n";
+    std::cout << "Training on data/train.bin (" << STEPS << " steps, batch=" << BATCH_SIZE << ")...\n";
 
     auto trainStart = std::chrono::steady_clock::now();
 
