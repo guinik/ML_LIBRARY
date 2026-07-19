@@ -1,5 +1,6 @@
 #include "Tensor.hpp"
 #include "CudaMatMul.hpp"
+#include "Node.hpp"
 #include <cstdlib>
 #include <iostream>
 #include <vector>
