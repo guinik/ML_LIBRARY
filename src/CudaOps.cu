@@ -432,7 +432,7 @@ __global__ void crossEntropyBackwardKernel(
 
 __global__ void reduceLeadingKernel(const float* src, float* dst, int leadTotal, int lastDim)
 {
-    __shared__ float sdata[32][8];
+    __shared__ float sdata[32][9];
     int tx = threadIdx.x;
     int ty = threadIdx.y;
     int d = blockIdx.x * blockDim.x + tx;
