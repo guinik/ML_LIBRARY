@@ -7,32 +7,34 @@
 #include <chrono>
 #include <fstream>
 #include <cmath>
+#include <string>
 #ifdef USE_CUDA
 #include "CudaMatMul.hpp"
 #include "CudaOps.hpp"
 #include "CudaPool.hpp"
 #endif
 
-static const size_t VOCAB_SIZE   = 4096;
-static const size_t SEQ_LEN      = 64;
-static const size_t EMBED_DIM    = 768;
-static const size_t DK           = 768;
-static const size_t NUM_LAYERS   = 6;
-static const size_t BATCH_SIZE   = 16;
-static const int    STEPS        = 100000;
-static const int    LOG_EVERY    = 100;
-static const int    SAVE_EVERY   = 1000;
-static const float  MAX_LR       = 3e-4f;
-static const float  MIN_LR_FRAC  = 0.1f;
-static const int    WARMUP_STEPS = 2000;
+static const size_t VOCAB_SIZE     = 4096;
+static const size_t SEQ_LEN        = 64;
+static const size_t EMBED_DIM      = 768;
+static const size_t DK             = 768;
+static const size_t NUM_LAYERS     = 6;
+static const size_t BATCH_SIZE     = 16;
+static const int    PRETRAIN_STEPS = 100000;
+static const int    FINETUNE_STEPS = 15000;
+static const int    LOG_EVERY      = 100;
+static const int    SAVE_EVERY     = 1000;
+static const float  MAX_LR         = 3e-4f;
+static const float  MIN_LR_FRAC    = 0.1f;
+static const int    WARMUP_STEPS   = 2000;
 
-static float getLR(int step)
+static float getLR(int step, int phaseSteps)
 {
     if (step < WARMUP_STEPS)
     {
         return MAX_LR * (float)(step + 1) / WARMUP_STEPS;
     }
-    float t = (float)(step - WARMUP_STEPS) / (STEPS - WARMUP_STEPS);
+    float t = (float)(step - WARMUP_STEPS) / (phaseSteps - WARMUP_STEPS);
     float cosine = 0.5f * (1.0f + cosf(3.14159265f * t));
     return MAX_LR * (MIN_LR_FRAC + (1.0f - MIN_LR_FRAC) * cosine);
 }
@@ -73,40 +75,29 @@ static void generateSample(TransformerMiniModel& model, DataLoader& loader)
     std::cout << loader.decode(generated) << "\n";
 }
 
-int main()
+static void runPhase(TransformerMiniModel& model, const std::string& name,
+                      const std::string& dataFile, int steps)
 {
-    srand(42);
-#ifdef USE_CUDA
-    cudaMatMulInit();
-#endif
-
-    DataLoader loader("../data/train.bin", "../data/vocab.json", SEQ_LEN, VOCAB_SIZE, BATCH_SIZE);
-
-    TransformerMiniModel model(VOCAB_SIZE, EMBED_DIM, DK, NUM_LAYERS, /*causal=*/true);
-
-    std::cout << "Parameters: " << model.paramCount() << "\n";
-
+    std::ifstream exists(dataFile);
+    if (!exists.good())
     {
-        std::ifstream check("../tinystories.mlt");
-        if (check.good())
-        {
-            std::cout << "Resuming from tinystories.mlt\n";
-            model.load("../tinystories.mlt");
-        }
+        std::cout << "Skipping phase '" << name << "' (missing " << dataFile << ")\n";
+        return;
     }
 
-    std::cout << "Training on data/train.bin (" << STEPS << " steps, batch=" << BATCH_SIZE << ")...\n";
+    DataLoader loader(dataFile, "../data/vocab.json", SEQ_LEN, VOCAB_SIZE, BATCH_SIZE);
+    std::cout << "\n=== Phase: " << name << " (" << dataFile << ", " << steps << " steps) ===\n";
 
     auto trainStart = std::chrono::steady_clock::now();
 
-    for (int step = 0; step < STEPS; step++)
+    for (int step = 0; step < steps; step++)
     {
         auto [inp, tgt] = loader.nextBatch();
 
         model.forward(inp, tgt);
         model.cleanGradients();
         model.backward();
-        model.applyGradient(getLR(step));
+        model.applyGradient(getLR(step, steps));
 
         if (step % LOG_EVERY == 0 && step > 0)
         {
@@ -122,13 +113,13 @@ int main()
             auto now     = std::chrono::steady_clock::now();
             double elapsed = std::chrono::duration<double>(now - trainStart).count();
             double secPerStep = elapsed / step;
-            double etaSec     = secPerStep * (STEPS - step);
+            double etaSec     = secPerStep * (steps - step);
             int etaMin        = static_cast<int>(etaSec) / 60;
             int etaSec2       = static_cast<int>(etaSec) % 60;
 
-            std::cout << "Step " << step << "/" << STEPS
+            std::cout << "[" << name << "] Step " << step << "/" << steps
                       << "  Loss: " << loss
-                      << "  LR: " << getLR(step)
+                      << "  LR: " << getLR(step, steps)
                       << "  ETA: " << etaMin << "m" << etaSec2 << "s\n";
         }
 
@@ -142,10 +133,46 @@ int main()
     }
 
     model.save("../tinystories.mlt");
-    std::cout << "\nSaved to tinystories.mlt\n";
-
-    std::cout << "\n--- Generation ---\n";
+    std::cout << "Phase '" << name << "' complete, saved to tinystories.mlt\n";
+    std::cout << "Sample: ";
     generateSample(model, loader);
+}
+
+int main()
+{
+    srand(42);
+#ifdef USE_CUDA
+    cudaMatMulInit();
+#endif
+
+    TransformerMiniModel model(VOCAB_SIZE, EMBED_DIM, DK, NUM_LAYERS, /*causal=*/true);
+    std::cout << "Parameters: " << model.paramCount() << "\n";
+
+    {
+        std::ifstream check("../tinystories.mlt");
+        if (check.good())
+        {
+            std::cout << "Resuming from tinystories.mlt\n";
+            model.load("../tinystories.mlt");
+        }
+    }
+
+    // build_vocab.py --dataset combined produces both of these with a shared
+    // vocab, so weights carry over correctly between phases with no manual
+    // file swapping. Mutually exclusive with the single-dataset fallback
+    // below so a stale data/train.bin from an earlier single-dataset run
+    // (built with a different, incompatible vocab) never gets touched.
+    std::ifstream tsFile("../data/train_tinystories.bin");
+    std::ifstream ddFile("../data/train_dailydialog.bin");
+    if (tsFile.good() && ddFile.good())
+    {
+        runPhase(model, "pretrain (tinystories)", "../data/train_tinystories.bin", PRETRAIN_STEPS);
+        runPhase(model, "finetune (dailydialog)", "../data/train_dailydialog.bin", FINETUNE_STEPS);
+    }
+    else
+    {
+        runPhase(model, "train", "../data/train.bin", PRETRAIN_STEPS);
+    }
 
 #ifdef USE_CUDA
     cudaPoolFlush();
