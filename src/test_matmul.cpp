@@ -101,7 +101,7 @@ int main()
         {"transpose-A + transpose-B, batched",          {2, 3, 5}, true,  {4, 3},    true},
         {"no-transpose, batched, both operands batched, square-ish", {3, 6, 6}, false, {3, 6, 6}, false},
         {"transpose-B, weight broadcast, model-scale batch (fold-into-M path)", {16, 64, 256}, false, {256, 256}, true},
-        {"transpose-B, A broadcasts, B batched (fold-into-N path)", {5, 3}, false, {2, 4, 3}, true},
+        {"transpose-B, A broadcasts, B batched (must fall back, no fold-into-N)", {5, 3}, false, {2, 4, 3}, true},
         {"transpose-A, A broadcasts, B batched (unsafe-to-fold, must fall back)", {3, 5}, true, {2, 3, 4}, false},
     };
 
