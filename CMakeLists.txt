@@ -65,7 +65,7 @@ target_include_directories(ML_LIBRARY PUBLIC include)
 if(USE_CUDA)
     find_package(CUDAToolkit REQUIRED)
     target_compile_definitions(ML_LIBRARY PUBLIC USE_CUDA)
-    target_link_libraries(ML_LIBRARY PUBLIC CUDA::cublas CUDA::cudart)
+    target_link_libraries(ML_LIBRARY PUBLIC CUDA::cublas CUDA::cublasLt CUDA::cudart)
     set_target_properties(ML_LIBRARY PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
 endif()
 
@@ -84,3 +84,13 @@ if(NOT MSVC)
 endif()
 
 target_link_libraries(BENCHMARK PRIVATE ML_LIBRARY)
+
+if(USE_CUDA)
+    add_executable(TEST_MATMUL src/test_matmul.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_MATMUL PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_MATMUL PRIVATE ML_LIBRARY)
+endif()

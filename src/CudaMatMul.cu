@@ -2,13 +2,16 @@
 #include "CudaPool.hpp"
 #include "Node.hpp"
 #include <cublas_v2.h>
+#include <cublasLt.h>
 #include <cuda_runtime.h>
 #include <stdexcept>
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <map>
 
 static cublasHandle_t g_handle = nullptr;
+static cublasLtHandle_t g_ltHandle = nullptr;
 
 #define CUDA_CHECK(x) \
     do \
@@ -30,13 +33,73 @@ static cublasHandle_t g_handle = nullptr;
         } \
     } while (0)
 
+#define CUBLASLT_CHECK(x) \
+    do \
+    { \
+        cublasStatus_t _s = (x); \
+        if (_s != CUBLAS_STATUS_SUCCESS) \
+        { \
+            throw std::runtime_error("cuBLASLt error " + std::to_string(_s)); \
+        } \
+    } while (0)
+
+// Cached per-shape cuBLASLt plan: descriptor creation is cheap, but
+// cublasLtMatmulAlgoGetHeuristic does real algorithm-search work, so we run it
+// once per distinct (m,n,k,batchCount,transposes,broadcast) shape and reuse the
+// chosen algorithm on every subsequent call with that same shape.
+struct LtPlan
+{
+    cublasLtMatmulDesc_t opDesc = nullptr;
+    cublasLtMatrixLayout_t leftDesc = nullptr;
+    cublasLtMatrixLayout_t rightDesc = nullptr;
+    cublasLtMatrixLayout_t cDesc = nullptr;
+    cublasLtMatmulAlgo_t algo{};
+};
+
+struct MatmulShapeKey
+{
+    int64_t m, n, k, batchCount;
+    cublasOperation_t opLeft, opRight;
+    bool bcastLeft, bcastRight;
+
+    bool operator<(const MatmulShapeKey& o) const
+    {
+        if (m != o.m) return m < o.m;
+        if (n != o.n) return n < o.n;
+        if (k != o.k) return k < o.k;
+        if (batchCount != o.batchCount) return batchCount < o.batchCount;
+        if (opLeft != o.opLeft) return opLeft < o.opLeft;
+        if (opRight != o.opRight) return opRight < o.opRight;
+        if (bcastLeft != o.bcastLeft) return bcastLeft < o.bcastLeft;
+        return bcastRight < o.bcastRight;
+    }
+};
+
+static std::map<MatmulShapeKey, LtPlan> g_ltPlans;
+static const size_t LT_WORKSPACE_FLOATS = (4u * 1024u * 1024u) / sizeof(float);
+
 void cudaMatMulInit()
 {
     CUBLAS_CHECK(cublasCreate(&g_handle));
+    CUBLASLT_CHECK(cublasLtCreate(&g_ltHandle));
 }
 
 void cudaMatMulShutdown()
 {
+    for (auto& [key, plan] : g_ltPlans)
+    {
+        if (plan.leftDesc)  { cublasLtMatrixLayoutDestroy(plan.leftDesc); }
+        if (plan.rightDesc) { cublasLtMatrixLayoutDestroy(plan.rightDesc); }
+        if (plan.cDesc)     { cublasLtMatrixLayoutDestroy(plan.cDesc); }
+        if (plan.opDesc)    { cublasLtMatmulDescDestroy(plan.opDesc); }
+    }
+    g_ltPlans.clear();
+
+    if (g_ltHandle)
+    {
+        cublasLtDestroy(g_ltHandle);
+        g_ltHandle = nullptr;
+    }
     if (g_handle)
     {
         cublasDestroy(g_handle);
@@ -142,20 +205,83 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
     const float alpha = 1.0f;
     const float beta = 0.0f;
 
-    CUBLAS_CHECK(cublasGemmStridedBatchedEx(
-        g_handle,
-        tB ? CUBLAS_OP_T : CUBLAS_OP_N,
-        tA ? CUBLAS_OP_T : CUBLAS_OP_N,
-        (int)N, (int)M, (int)K,
+    // Same row-major-via-column-major trick as before: treat B as the "left"
+    // cuBLAS operand and A as the "right" one, with M/N swapped.
+    cublasOperation_t opLeft  = tB ? CUBLAS_OP_T : CUBLAS_OP_N;
+    cublasOperation_t opRight = tA ? CUBLAS_OP_T : CUBLAS_OP_N;
+    int64_t m = (int64_t)N;
+    int64_t n = (int64_t)M;
+    int64_t k = (int64_t)K;
+    int64_t ldLeft  = tB ? (int64_t)K : (int64_t)N;
+    int64_t ldRight = tA ? (int64_t)M : (int64_t)K;
+    int64_t ldC     = (int64_t)N;
+
+    MatmulShapeKey key{ m, n, k, (int64_t)batchCount, opLeft, opRight,
+                         strideDevB == 0, strideDevA == 0 };
+
+    auto it = g_ltPlans.find(key);
+    if (it == g_ltPlans.end())
+    {
+        LtPlan plan{};
+        CUBLASLT_CHECK(cublasLtMatmulDescCreate(&plan.opDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F));
+        CUBLASLT_CHECK(cublasLtMatmulDescSetAttribute(plan.opDesc, CUBLASLT_MATMUL_DESC_TRANSA, &opLeft, sizeof(opLeft)));
+        CUBLASLT_CHECK(cublasLtMatmulDescSetAttribute(plan.opDesc, CUBLASLT_MATMUL_DESC_TRANSB, &opRight, sizeof(opRight)));
+
+        int64_t leftRows  = (opLeft  == CUBLAS_OP_N) ? m : k;
+        int64_t leftCols  = (opLeft  == CUBLAS_OP_N) ? k : m;
+        int64_t rightRows = (opRight == CUBLAS_OP_N) ? k : n;
+        int64_t rightCols = (opRight == CUBLAS_OP_N) ? n : k;
+
+        CUBLASLT_CHECK(cublasLtMatrixLayoutCreate(&plan.leftDesc,  CUDA_R_32F, (uint64_t)leftRows,  (uint64_t)leftCols,  ldLeft));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutCreate(&plan.rightDesc, CUDA_R_32F, (uint64_t)rightRows, (uint64_t)rightCols, ldRight));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutCreate(&plan.cDesc,     CUDA_R_32F, (uint64_t)m, (uint64_t)n, ldC));
+
+        int32_t batchCountI = (int32_t)batchCount;
+        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.leftDesc,  CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batchCountI, sizeof(batchCountI)));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.rightDesc, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batchCountI, sizeof(batchCountI)));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.cDesc,     CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batchCountI, sizeof(batchCountI)));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.leftDesc,  CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &strideDevB, sizeof(strideDevB)));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.rightDesc, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &strideDevA, sizeof(strideDevA)));
+        CUBLASLT_CHECK(cublasLtMatrixLayoutSetAttribute(plan.cDesc,     CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &strideDevC, sizeof(strideDevC)));
+
+        cublasLtMatmulPreference_t pref = nullptr;
+        CUBLASLT_CHECK(cublasLtMatmulPreferenceCreate(&pref));
+        size_t workspaceBytes = LT_WORKSPACE_FLOATS * sizeof(float);
+        CUBLASLT_CHECK(cublasLtMatmulPreferenceSetAttribute(pref, CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES, &workspaceBytes, sizeof(workspaceBytes)));
+
+        cublasLtMatmulHeuristicResult_t heuristic{};
+        int returnedCount = 0;
+        CUBLASLT_CHECK(cublasLtMatmulAlgoGetHeuristic(
+            g_ltHandle, plan.opDesc,
+            plan.leftDesc, plan.rightDesc, plan.cDesc, plan.cDesc,
+            pref, 1, &heuristic, &returnedCount));
+        cublasLtMatmulPreferenceDestroy(pref);
+
+        if (returnedCount == 0)
+        {
+            throw std::runtime_error("cuBLASLt: no valid algorithm found for this matmul shape");
+        }
+        plan.algo = heuristic.algo;
+
+        it = g_ltPlans.emplace(key, plan).first;
+    }
+
+    const LtPlan& plan = it->second;
+    float* workspace = cudaPoolAlloc(LT_WORKSPACE_FLOATS);
+
+    CUBLASLT_CHECK(cublasLtMatmul(
+        g_ltHandle, plan.opDesc,
         &alpha,
-        B.d_data.get(), CUDA_R_32F, tB ? (int)K : (int)N, strideDevB,
-        A.d_data.get(), CUDA_R_32F, tA ? (int)M : (int)K, strideDevA,
+        B.d_data.get(), plan.leftDesc,
+        A.d_data.get(), plan.rightDesc,
         &beta,
-        d_C, CUDA_R_32F, (int)N, strideDevC,
-        (int)batchCount,
-        CUBLAS_COMPUTE_32F,
-        CUBLAS_GEMM_DEFAULT
-    ));
+        d_C, plan.cDesc,
+        d_C, plan.cDesc,
+        &plan.algo,
+        workspace, LT_WORKSPACE_FLOATS * sizeof(float),
+        0));
+
+    cudaPoolFree(workspace, LT_WORKSPACE_FLOATS);
 
     Tensor result(resultShape.size(), resultShape);
     result.d_data = std::shared_ptr<float>(d_C, PoolDeleter{nC});
