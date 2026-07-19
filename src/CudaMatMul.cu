@@ -57,7 +57,7 @@ struct MatmulShapeKey
 {
     int64_t m, n, k, batchCount;
     cublasOperation_t opLeft, opRight;
-    bool bcastLeft, bcastRight;
+    bool bcastLeft, bcastRight, hasBias;
 
     bool operator<(const MatmulShapeKey& o) const
     {
@@ -89,7 +89,11 @@ struct MatmulShapeKey
         {
             return bcastLeft < o.bcastLeft;
         }
-        return bcastRight < o.bcastRight;
+        if (bcastRight != o.bcastRight)
+        {
+            return bcastRight < o.bcastRight;
+        }
+        return hasBias < o.hasBias;
     }
 };
 
@@ -159,7 +163,7 @@ static void swapLast2(std::vector<size_t>& v)
     std::swap(v[v.size() - 1], v[v.size() - 2]);
 }
 
-Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
+Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask, const Tensor* bias)
 {
     bool tA = (mask & MatMulFlags::MATMUL_TRANSPOSE_A) != 0;
     bool tB = (mask & MatMulFlags::MATMUL_TRANSPOSE_B) != 0;
@@ -253,8 +257,14 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
     // ldC must track cublasM since c is our own tightly packed buffer
     int64_t ldC = cublasM;
 
+    bool hasBias = bias != nullptr;
+    if (hasBias && !bias->onGPU())
+    {
+        bias->toGPU();
+    }
+
     MatmulShapeKey key{ cublasM, cublasN, cublasK, effBatchCount, opLeft, opRight,
-                         strideDevB == 0, strideDevA == 0 };
+                         strideDevB == 0, strideDevA == 0, hasBias };
 
     auto it = g_ltPlans.find(key);
     if (it == g_ltPlans.end())
@@ -263,6 +273,12 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
         CUBLASLT_CHECK(cublasLtMatmulDescCreate(&plan.opDesc, CUBLAS_COMPUTE_32F, CUDA_R_32F));
         CUBLASLT_CHECK(cublasLtMatmulDescSetAttribute(plan.opDesc, CUBLASLT_MATMUL_DESC_TRANSA, &opLeft, sizeof(opLeft)));
         CUBLASLT_CHECK(cublasLtMatmulDescSetAttribute(plan.opDesc, CUBLASLT_MATMUL_DESC_TRANSB, &opRight, sizeof(opRight)));
+
+        if (hasBias)
+        {
+            cublasLtEpilogue_t epilogue = CUBLASLT_EPILOGUE_BIAS;
+            CUBLASLT_CHECK(cublasLtMatmulDescSetAttribute(plan.opDesc, CUBLASLT_MATMUL_DESC_EPILOGUE, &epilogue, sizeof(epilogue)));
+        }
 
         int64_t leftRows  = (opLeft  == CUBLAS_OP_N) ? cublasM : cublasK;
         int64_t leftCols  = (opLeft  == CUBLAS_OP_N) ? cublasK : cublasM;
@@ -304,6 +320,13 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
     }
 
     const LtPlan& plan = it->second;
+
+    if (hasBias)
+    {
+        const float* biasPtr = bias->d_data.get();
+        CUBLASLT_CHECK(cublasLtMatmulDescSetAttribute(plan.opDesc, CUBLASLT_MATMUL_DESC_BIAS_POINTER, &biasPtr, sizeof(biasPtr)));
+    }
+
     float* workspace = cudaPoolAlloc(LT_WORKSPACE_FLOATS);
 
     CUBLASLT_CHECK(cublasLtMatmul(

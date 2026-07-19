@@ -255,3 +255,14 @@ struct EmbeddingOperation : Operation
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
 };
+
+// fused x @ weight^T + bias, children order is {x, weight, bias}
+struct DenseOperation : Operation
+{
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<const Tensor*>& inputs,
+		const Tensor& output,
+		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
+};

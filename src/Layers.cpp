@@ -117,20 +117,20 @@ DenseLayer::DenseLayer(size_t outDim, size_t inDim, Activation inputActivation)
 
 std::shared_ptr<Node> DenseLayer::forward(const std::vector<std::shared_ptr<Node>>& inputsNodes)
 {
-	
+	auto denseNode = makeNode3(std::make_shared<DenseOperation>(), inputsNodes[0], weights, bias);
 	switch(activation)
 	{
 		case Activation::RELU:
 		{
-			return relu(matMul(inputsNodes[0], weights) + bias);
+			return relu(denseNode);
 		}
 		case Activation::SIGMOID:
 		{
-			return sigmoid(matMul(inputsNodes[0], weights) + bias);
+			return sigmoid(denseNode);
 		}
 		default:
 		{
-			return matMul(inputsNodes[0], weights) + bias;
+			return denseNode;
 
 		}
 	}

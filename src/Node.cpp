@@ -771,3 +771,46 @@ std::vector<Tensor> EmbeddingOperation::backward(
 	return { gradTokens, gradWeights };
 #endif
 }
+
+Tensor DenseOperation::forward(const std::vector<const Tensor*>& inputs) const
+{
+#ifdef USE_CUDA
+	return cudaMatMul(*inputs[0], *inputs[1], MatMulFlags::MATMUL_TRANSPOSE_B, inputs[2]);
+#else
+	return matMul(*inputs[0], *inputs[1], MatMulFlags::MATMUL_TRANSPOSE_B) + *inputs[2];
+#endif
+}
+
+std::vector<Tensor> DenseOperation::backward(
+	const std::vector<const Tensor*>& inputs,
+	const Tensor&,
+	const Tensor& gradOutput) const
+{
+	Tensor leftGrad = matMul(gradOutput, *inputs[1], MatMulFlags::MATMUL_NO_TRANSPOSES);
+
+	bool weightBroadcastsOverBatch = inputs[1]->shape.size() < gradOutput.shape.size();
+	Tensor rightGrad;
+	if (weightBroadcastsOverBatch)
+	{
+		Tensor gradFlat = flattenLeadingDims(gradOutput);
+		Tensor inFlat = flattenLeadingDims(*inputs[0]);
+		rightGrad = matMul(gradFlat, inFlat, MatMulFlags::MATMUL_TRANSPOSE_A);
+	}
+	else
+	{
+		rightGrad = matMul(gradOutput, *inputs[0], MatMulFlags::MATMUL_TRANSPOSE_A);
+	}
+
+	std::vector<Tensor> result;
+	result.reserve(3);
+#ifdef USE_CUDA
+	result.push_back(cudaUnbroadcast(leftGrad, inputs[0]->shape));
+	result.push_back(std::move(rightGrad));
+	result.push_back(cudaUnbroadcast(gradOutput, inputs[2]->shape));
+#else
+	result.push_back(unbroadcastGrad(leftGrad, inputs[0]->shape));
+	result.push_back(std::move(rightGrad));
+	result.push_back(unbroadcastGrad(gradOutput, inputs[2]->shape));
+#endif
+	return result;
+}

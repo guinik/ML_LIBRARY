@@ -109,4 +109,12 @@ if(USE_CUDA)
     endif()
 
     target_link_libraries(TEST_UNBROADCAST PRIVATE ML_LIBRARY)
+
+    add_executable(TEST_DENSE_OP src/test_dense_op.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_DENSE_OP PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_DENSE_OP PRIVATE ML_LIBRARY)
 endif()
