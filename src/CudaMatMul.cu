@@ -43,10 +43,7 @@ static cublasLtHandle_t g_ltHandle = nullptr;
         } \
     } while (0)
 
-// Cached per-shape cuBLASLt plan: descriptor creation is cheap, but
-// cublasLtMatmulAlgoGetHeuristic does real algorithm-search work, so we run it
-// once per distinct (m,n,k,batchCount,transposes,broadcast) shape and reuse the
-// chosen algorithm on every subsequent call with that same shape.
+// cached per shape, so the algo heuristic search only runs once per shape
 struct LtPlan
 {
     cublasLtMatmulDesc_t opDesc = nullptr;
@@ -226,39 +223,15 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
     const float alpha = 1.0f;
     const float beta = 0.0f;
 
-    // Same row-major-via-column-major trick as before: treat B as the "left"
-    // cuBLAS operand and A as the "right" one, with M/N swapped.
     cublasOperation_t opLeft  = tB ? CUBLAS_OP_T : CUBLAS_OP_N;
     cublasOperation_t opRight = tA ? CUBLAS_OP_T : CUBLAS_OP_N;
-    int64_t cublasM = (int64_t)N;   // cublas "m" = our N
-    int64_t cublasN = (int64_t)M;   // cublas "n" = our M
+    int64_t cublasM = (int64_t)N;
+    int64_t cublasN = (int64_t)M;
     int64_t cublasK = (int64_t)K;
     int64_t ldLeft  = tB ? (int64_t)K : (int64_t)N;
     int64_t ldRight = tA ? (int64_t)M : (int64_t)K;
 
-    // If B (the weight) is broadcast across the batch dimension -- every
-    // forward Dense/attention projection, and the input-side gradient in
-    // backward -- fold the batch dimension directly into cublasN (our M)
-    // instead of driving a strided batch GEMM. Row-major [batch,M,K] and
-    // [(batch*M),K] are the exact same memory layout, so this is a free
-    // reshape that turns many small batched GEMMs into one large,
-    // better-utilized GEMM -- the same approach frameworks like PyTorch use
-    // for Linear layers. B itself is untouched since it has no batch
-    // dimension to begin with.
-    //
-    // This is only a valid free reshape when batch and M are ADJACENT in
-    // physical memory, which requires tA to be false (A is physically
-    // [batch,M,K]; if tA is true, A is physically [batch,K,M] and batch/M
-    // are separated by K, so folding would require real data movement).
-    //
-    // The mirror case (A broadcasts, fold into N/cublasM) is NOT valid at
-    // all, regardless of transpose flags: cuBLAS's row-major-via-column-major
-    // output always comes out as [M,N] (M outer, N inner), and our result
-    // tensors are always [batch,...,M,N] (batch outermost). Folding batch
-    // into M correctly nests as [batch,M,N]. Folding batch into N would
-    // require batch to sit *inside* the innermost dimension, which can never
-    // reproduce [batch,M,N] ordering -- confirmed by an earlier attempt at
-    // this that passed shape checks but scrambled the data (see git history).
+    // fold batch into cublasN when b broadcasts and tA is false, only valid direction, see git history for why the mirror case broke
     bool bBroadcasts = (strideDevB == 0) && (batchCount > 1);
     bool aBroadcasts = (strideDevA == 0) && (batchCount > 1);
     bool canFoldIntoM = bBroadcasts && !aBroadcasts && !tA;
@@ -277,8 +250,7 @@ Tensor cudaMatMul(const Tensor& A, const Tensor& B, uint16_t mask)
         effStrideC = 0;
     }
 
-    // C is our own freshly-allocated, always-tightly-packed buffer, so its
-    // leading dimension must always track the current cublasM directly.
+    // ldC must track cublasM since c is our own tightly packed buffer
     int64_t ldC = cublasM;
 
     MatmulShapeKey key{ cublasM, cublasN, cublasK, effBatchCount, opLeft, opRight,

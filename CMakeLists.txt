@@ -101,4 +101,12 @@ if(USE_CUDA)
     endif()
 
     target_link_libraries(TEST_WEIGHT_GRAD PRIVATE ML_LIBRARY)
+
+    add_executable(TEST_UNBROADCAST src/test_unbroadcast.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_UNBROADCAST PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_UNBROADCAST PRIVATE ML_LIBRARY)
 endif()

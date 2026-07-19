@@ -7,12 +7,7 @@
 #include <cmath>
 #include <algorithm>
 
-// Standalone correctness check for the fused weight-gradient path added to
-// MatMulOperation::backward (Node.cpp). Verifies both leftGrad and rightGrad
-// against an independent, from-scratch reference computed with plain nested
-// loops -- not derived from anything in Node.cpp/CudaMatMul.cu. A wrong
-// gradient here would silently corrupt training rather than crash, so this
-// gets its own dedicated, from-first-principles check.
+// checks MatMulOperation::backward's fused weight gradient against an independent reference
 
 static Tensor makeRandomTensor(const std::vector<size_t>& shape)
 {
@@ -50,10 +45,7 @@ int main()
 	rightGrad.toCPU();
 #endif
 
-	// Independent reference:
-	//   out[b][s][n]           = sum_k x[b][s][k] * weight[n][k]
-	//   d(out)/d(x)[b][s][k]   = sum_n gradOutput[b][s][n] * weight[n][k]
-	//   d(out)/d(weight)[n][k] = sum_{b,s} gradOutput[b][s][n] * x[b][s][k]
+	// out[b][s][n] = sum_k x[b][s][k] * weight[n][k]
 	std::vector<float> expectedLeftGrad(BATCH * SEQ * IN_DIM, 0.0f);
 	std::vector<float> expectedRightGrad(OUT_DIM * IN_DIM, 0.0f);
 

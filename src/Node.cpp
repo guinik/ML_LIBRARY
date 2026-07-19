@@ -119,9 +119,7 @@ namespace
 		return result;
 	}
 
-	// Zero-copy reshape: merges every leading dimension of a contiguous
-	// row-major tensor into one, e.g. [batch,seq,K] -> [(batch*seq),K].
-	// Shares the same underlying data/d_data buffer, no copy.
+	// zero copy reshape, merges leading dims, e.g. [batch,seq,K] to [(batch*seq),K]
 	Tensor flattenLeadingDims(const Tensor& t)
 	{
 		size_t lastDim = t.shape.back();
@@ -289,14 +287,7 @@ std::vector<Tensor> MatMulOperation::backward(const std::vector<const Tensor*>& 
 	} else if (!tA && tB) {
 		leftGrad = matMul(gradOutput, *inputs[1], MatMulFlags::MATMUL_NO_TRANSPOSES);
 
-		// inputs[1] is the weight operand here (forward was x @ W^T). When it
-		// has no batch dimension of its own (the common case -- every Dense
-		// and attention-projection weight), computing rightGrad as a batched
-		// matmul followed by a separate reduce-over-batch is wasted work:
-		// folding batch*seq directly into the contraction dimension computes
-		// the already-reduced [N,K] weight gradient in one matmul, with the
-		// batch reduction happening for free as part of the sum over K. This
-		// is the same technique PyTorch's Linear layer backward uses.
+		// fold batch into the contraction dim when inputs[1] is a weight with no batch dim
 		bool weightBroadcastsOverBatch = inputs[1]->shape.size() < gradOutput.shape.size();
 		if (weightBroadcastsOverBatch)
 		{

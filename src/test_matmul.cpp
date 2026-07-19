@@ -7,13 +7,7 @@
 #include <cmath>
 #include <stdexcept>
 
-// Standalone numerical correctness check for the cuBLASLt rewrite of
-// cudaMatMul. Deliberately does NOT reuse any indexing logic from
-// CudaMatMul.cu/Node.cpp -- it's an independent textbook triple-loop
-// implementation, so a bug in the library's shape math can't also be
-// baked into the "expected" values here. Every (transpose-flag, batch,
-// broadcast) combination actually used by TransformerMiniModel's forward
-// and backward passes is exercised below.
+// independent reference matmul, not derived from cudaMatMul's own logic
 
 static std::vector<float> referenceMatMul(
     const std::vector<float>& Adata, const std::vector<size_t>& Ashape, bool tA,

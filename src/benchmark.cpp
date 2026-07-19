@@ -16,10 +16,7 @@ static inline void gpuSync()
 #endif
 }
 
-// Synthetic-data throughput benchmark: same architecture/hyperparameters as
-// src/main.cpp, but no data loading or checkpointing, so timing reflects only
-// forward + backward + optimizer step. Meant to be compared against
-// scripts/benchmark_pytorch.py, which mirrors this model in PyTorch.
+// synthetic-data throughput benchmark, compare against scripts/benchmark_pytorch.py
 
 static const size_t VOCAB_SIZE   = 4096;
 static const size_t SEQ_LEN      = 64;

@@ -432,11 +432,32 @@ __global__ void crossEntropyBackwardKernel(
 
 __global__ void reduceLeadingKernel(const float* src, float* dst, int leadTotal, int lastDim)
 {
-    int d = blockIdx.x * blockDim.x + threadIdx.x;
-    if (d >= lastDim) { return; }
+    __shared__ float sdata[32][8];
+    int tx = threadIdx.x;
+    int ty = threadIdx.y;
+    int d = blockIdx.x * blockDim.x + tx;
     float sum = 0.0f;
-    for (int i = 0; i < leadTotal; i++) { sum += src[i * lastDim + d]; }
-    dst[d] = sum;
+    if (d < lastDim)
+    {
+        for (int i = ty; i < leadTotal; i += blockDim.y)
+        {
+            sum += src[i * lastDim + d];
+        }
+    }
+    sdata[tx][ty] = sum;
+    __syncthreads();
+    for (int s = blockDim.y / 2; s > 0; s >>= 1)
+    {
+        if (ty < s)
+        {
+            sdata[tx][ty] += sdata[tx][ty + s];
+        }
+        __syncthreads();
+    }
+    if (ty == 0 && d < lastDim)
+    {
+        dst[d] = sdata[tx][0];
+    }
 }
 
 // ─── Host functions ───────────────────────────────────────────────────────────
@@ -733,8 +754,8 @@ Tensor cudaUnbroadcast(const Tensor& grad, const std::vector<size_t>& targetShap
     for (auto d : targetShape) { lastDim *= d; }
     grad.toGPU();
     float* dOut = cudaPoolAlloc(lastDim);
-    int threads = 256;
-    int blocks = ((int)lastDim + threads - 1) / threads;
+    dim3 threads(32, 8);
+    int blocks = ((int)lastDim + 31) / 32;
     reduceLeadingKernel<<<blocks, threads>>>(grad.d_data.get(), dOut, (int)leadTotal, (int)lastDim);
     return makeCudaTensor(targetShape, dOut);
 }
