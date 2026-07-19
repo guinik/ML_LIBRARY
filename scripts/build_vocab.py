@@ -18,10 +18,16 @@ UNK_TOKEN = "<UNK>"
 EOS_TOKEN = "<EOS>"
 SPECIAL_TOKENS = [PAD_TOKEN, UNK_TOKEN, EOS_TOKEN]
 
-DATASETS = {
-    "tinystories": "roneneldan/TinyStories",
-    "dailydialog": "roskoN/dailydialog",
+DAILYDIALOG_PARQUET = {
+    "train": "https://huggingface.co/datasets/roskoN/dailydialog/resolve/refs%2Fconvert%2Fparquet/full/train/0000.parquet",
+    "validation": "https://huggingface.co/datasets/roskoN/dailydialog/resolve/refs%2Fconvert%2Fparquet/full/validation/0000.parquet",
+    "test": "https://huggingface.co/datasets/roskoN/dailydialog/resolve/refs%2Fconvert%2Fparquet/full/test/0000.parquet",
 }
+
+def load_raw_dataset(dataset_name):
+    if dataset_name == "tinystories":
+        return load_dataset("roneneldan/TinyStories", cache_dir="data/tinystories", token=os.getenv("HF_TOKEN"))
+    return load_dataset("parquet", data_files=DAILYDIALOG_PARQUET, cache_dir="data/dailydialog", token=os.getenv("HF_TOKEN"))
 
 def tokenize(text):
     text = text.lower()
@@ -64,11 +70,11 @@ def encode_split(dataset, dataset_name, vocab, out_path):
     print(f"  {out_path}: {len(ids):,} tokens")
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--dataset", choices=list(DATASETS.keys()), default="tinystories")
+parser.add_argument("--dataset", choices=["tinystories", "dailydialog"], default="tinystories")
 args = parser.parse_args()
 
 print(f"Loading dataset ({args.dataset})...")
-ds = load_dataset(DATASETS[args.dataset], cache_dir=f"data/{args.dataset}", token=os.getenv("HF_TOKEN"))
+ds = load_raw_dataset(args.dataset)
 
 print("Building vocab from train split...")
 vocab = build_vocab(ds["train"], args.dataset, VOCAB_SIZE)
