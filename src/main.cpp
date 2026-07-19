@@ -15,8 +15,8 @@
 
 static const size_t VOCAB_SIZE   = 4096;
 static const size_t SEQ_LEN      = 64;
-static const size_t EMBED_DIM    = 256;
-static const size_t DK           = 256;
+static const size_t EMBED_DIM    = 768;
+static const size_t DK           = 768;
 static const size_t NUM_LAYERS   = 6;
 static const size_t BATCH_SIZE   = 16;
 static const int    STEPS        = 100000;

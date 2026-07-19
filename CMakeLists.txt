@@ -85,6 +85,14 @@ endif()
 
 target_link_libraries(BENCHMARK PRIVATE ML_LIBRARY)
 
+add_executable(CHAT src/chat.cpp)
+
+if(NOT MSVC)
+    target_compile_options(CHAT PRIVATE -O3)
+endif()
+
+target_link_libraries(CHAT PRIVATE ML_LIBRARY)
+
 if(USE_CUDA)
     add_executable(TEST_MATMUL src/test_matmul.cpp)
 

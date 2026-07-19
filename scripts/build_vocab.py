@@ -1,3 +1,4 @@
+import argparse
 import os
 import json
 import re
@@ -17,6 +18,11 @@ UNK_TOKEN = "<UNK>"
 EOS_TOKEN = "<EOS>"
 SPECIAL_TOKENS = [PAD_TOKEN, UNK_TOKEN, EOS_TOKEN]
 
+DATASETS = {
+    "tinystories": "roneneldan/TinyStories",
+    "dailydialog": "roskoN/dailydialog",
+}
+
 def tokenize(text):
     text = text.lower()
     tokens = text.split()
@@ -27,32 +33,45 @@ def tokenize(text):
             cleaned.append(tok)
     return cleaned
 
-def build_vocab(dataset, max_words):
+def get_text(example, dataset_name):
+    if dataset_name == "tinystories":
+        return example["text"]
+    lines = []
+    for i, utterance in enumerate(example["dialog"]):
+        speaker = "user" if i % 2 == 0 else "bot"
+        lines.append(f"{speaker} {utterance.strip()}")
+    return " ".join(lines)
+
+def build_vocab(dataset, dataset_name, max_words):
     counts = Counter()
     for example in tqdm(dataset, desc="Counting words"):
-        counts.update(tokenize(example["text"]))
+        counts.update(tokenize(get_text(example, dataset_name)))
     vocab = {tok: idx for idx, tok in enumerate(SPECIAL_TOKENS)}
     for word, _ in counts.most_common(max_words - len(SPECIAL_TOKENS)):
         vocab[word] = len(vocab)
     return vocab
 
-def encode_split(dataset, vocab, out_path):
+def encode_split(dataset, dataset_name, vocab, out_path):
     unk_idx = vocab[UNK_TOKEN]
     eos_idx = vocab[EOS_TOKEN]
     ids = []
     for example in tqdm(dataset, desc=f"Encoding {out_path}"):
-        for tok in tokenize(example["text"]):
+        for tok in tokenize(get_text(example, dataset_name)):
             ids.append(vocab.get(tok, unk_idx))
         ids.append(eos_idx)
     with open(out_path, "wb") as f:
         f.write(struct.pack(f"{len(ids)}H", *ids))
     print(f"  {out_path}: {len(ids):,} tokens")
 
-print("Loading dataset...")
-ds = load_dataset("roneneldan/TinyStories", cache_dir="data/tinystories", token=os.getenv("HF_TOKEN"))
+parser = argparse.ArgumentParser()
+parser.add_argument("--dataset", choices=list(DATASETS.keys()), default="tinystories")
+args = parser.parse_args()
+
+print(f"Loading dataset ({args.dataset})...")
+ds = load_dataset(DATASETS[args.dataset], cache_dir=f"data/{args.dataset}", token=os.getenv("HF_TOKEN"))
 
 print("Building vocab from train split...")
-vocab = build_vocab(ds["train"], VOCAB_SIZE)
+vocab = build_vocab(ds["train"], args.dataset, VOCAB_SIZE)
 
 vocab_path = f"{DATA_DIR}/vocab.json"
 with open(vocab_path, "w") as f:
@@ -60,7 +79,7 @@ with open(vocab_path, "w") as f:
 print(f"  Vocab saved to {vocab_path} ({len(vocab)} words)")
 
 print("Encoding splits...")
-encode_split(ds["train"],      vocab, f"{DATA_DIR}/train.bin")
-encode_split(ds["validation"], vocab, f"{DATA_DIR}/val.bin")
+encode_split(ds["train"],      args.dataset, vocab, f"{DATA_DIR}/train.bin")
+encode_split(ds["validation"], args.dataset, vocab, f"{DATA_DIR}/val.bin")
 
 print("Done.")
