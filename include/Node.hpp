@@ -17,8 +17,8 @@ enum MatMulFlags : uint16_t
 struct Operation
 {
 	virtual ~Operation() = default;
-	virtual Tensor forward(const std::vector<Tensor>& inputs) const = 0;
-	virtual std::vector<Tensor> backward(const std::vector<Tensor>& inputs,
+	virtual Tensor forward(const std::vector<const Tensor*>& inputs) const = 0;
+	virtual std::vector<Tensor> backward(const std::vector<const Tensor*>& inputs,
 		const Tensor& outputs,
 		const Tensor& gradOutput) const = 0;
 	virtual bool isGpuOp() const { return false; }
@@ -42,7 +42,7 @@ struct Node
 		{
 			return;
 		}
-		std::vector<Tensor> inputTensor;
+		std::vector<const Tensor*> inputTensor;
 		for (auto& child : children)
 		{
 			if (!child)
@@ -59,7 +59,7 @@ struct Node
 				child->param.value.toCPU();
 			}
 #endif
-			inputTensor.push_back(child->param.value);
+			inputTensor.push_back(&child->param.value);
 		}
 		param.value = op->forward(inputTensor);
 	}
@@ -70,7 +70,7 @@ struct Node
 		{
 			return;
 		}
-		std::vector<Tensor> inputTensor;
+		std::vector<const Tensor*> inputTensor;
 		for (auto& child : children)
 		{
 			if (!child)
@@ -87,7 +87,7 @@ struct Node
 				child->param.value.toCPU();
 			}
 #endif
-			inputTensor.push_back(child->param.value);
+			inputTensor.push_back(&child->param.value);
 		}
 #ifdef USE_CUDA
 		if (!op->isGpuOp())
@@ -122,9 +122,9 @@ struct Node
 
 struct AddOperation : Operation
 {
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -132,9 +132,9 @@ struct AddOperation : Operation
 
 struct SubtractOperation : Operation
 {
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -144,9 +144,9 @@ struct ScaleOperation : Operation
 {
 	float scaleFactor;
 	ScaleOperation(float inputFactor) : scaleFactor(inputFactor) {};
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -156,9 +156,9 @@ struct MatMulOperation : Operation
 {
 	uint16_t flags;
 	MatMulOperation(uint16_t inputFlags = MatMulFlags::MATMUL_NO_TRANSPOSES) : flags(inputFlags) {}
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -166,9 +166,9 @@ struct MatMulOperation : Operation
 
 struct ReluOperation : Operation
 {
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -176,9 +176,9 @@ struct ReluOperation : Operation
 
 struct SquareOperation : Operation
 {
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -186,9 +186,9 @@ struct SquareOperation : Operation
 
 struct SigmoidOperation : Operation
 {
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -196,9 +196,9 @@ struct SigmoidOperation : Operation
 
 struct SoftmaxOperation : Operation
 {
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -206,9 +206,9 @@ struct SoftmaxOperation : Operation
 
 struct CausalMaskOperation : Operation
 {
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -216,9 +216,9 @@ struct CausalMaskOperation : Operation
 
 struct MultiplyOperation : Operation
 {
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor&,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -228,9 +228,9 @@ struct LayerNormOperation : Operation
 {
 	float eps;
 	LayerNormOperation(float inputEps = 1e-5f) : eps(inputEps) {}
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor& output,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -238,9 +238,9 @@ struct LayerNormOperation : Operation
 
 struct CrossEntropyOperation : Operation
 {
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor& output,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
@@ -248,9 +248,9 @@ struct CrossEntropyOperation : Operation
 
 struct EmbeddingOperation : Operation
 {
-	Tensor forward(const std::vector<Tensor>& inputs) const override;
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
 	std::vector<Tensor> backward(
-		const std::vector<Tensor>& inputs,
+		const std::vector<const Tensor*>& inputs,
 		const Tensor& output,
 		const Tensor& gradOutput) const override;
 	bool isGpuOp() const override { return true; }
