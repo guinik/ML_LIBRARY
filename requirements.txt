@@ -1,3 +1,4 @@
 datasets
 python-dotenv
 tqdm
+tokenizers

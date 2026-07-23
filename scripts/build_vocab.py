@@ -1,11 +1,13 @@
 import argparse
 import os
-import json
-import re
 import struct
-from collections import Counter
 from dotenv import load_dotenv
 from datasets import load_dataset
+from tokenizers import Tokenizer
+from tokenizers.models import BPE
+from tokenizers.trainers import BpeTrainer
+from tokenizers.pre_tokenizers import WhitespaceSplit
+from tokenizers.normalizers import Lowercase
 from tqdm import tqdm
 
 load_dotenv()
@@ -18,9 +20,7 @@ UNK_TOKEN  = "<UNK>"
 EOS_TOKEN  = "<EOS>"
 USER_TOKEN = "user"
 BOT_TOKEN  = "bot"
-# user/bot are reserved (not left to frequency ranking) so a much bigger
-# tinystories corpus can never crowd them out of the vocab in combined mode
-SPECIAL_TOKENS = [PAD_TOKEN, UNK_TOKEN, EOS_TOKEN, USER_TOKEN, BOT_TOKEN]
+SPECIAL_TOKENS = [PAD_TOKEN, UNK_TOKEN, EOS_TOKEN]
 
 DAILYDIALOG_PARQUET = {
     "train": "https://huggingface.co/datasets/roskoN/dailydialog/resolve/refs%2Fconvert%2Fparquet/full/train/0000.parquet",
@@ -33,16 +33,6 @@ def load_raw_dataset(dataset_name):
         return load_dataset("roneneldan/TinyStories", cache_dir="data/tinystories", token=os.getenv("HF_TOKEN"))
     return load_dataset("parquet", data_files=DAILYDIALOG_PARQUET, cache_dir="data/dailydialog", token=os.getenv("HF_TOKEN"))
 
-def tokenize(text):
-    text = text.lower()
-    tokens = text.split()
-    cleaned = []
-    for tok in tokens:
-        tok = re.sub(r"^[^a-z0-9']+|[^a-z0-9']+$", "", tok)
-        if tok:
-            cleaned.append(tok)
-    return cleaned
-
 def get_text(example, dataset_name):
     if dataset_name == "tinystories":
         return example["text"]
@@ -52,43 +42,36 @@ def get_text(example, dataset_name):
         lines.append(f"{speaker} {utterance.strip()}")
     return " ".join(lines)
 
-def count_words(dataset, dataset_name, counts):
-    for example in tqdm(dataset, desc=f"Counting words ({dataset_name})"):
-        counts.update(tokenize(get_text(example, dataset_name)))
+def text_iterator(datasets_and_names):
+    for dataset, dataset_name in datasets_and_names:
+        for example in tqdm(dataset, desc=f"Training tokenizer ({dataset_name})"):
+            yield get_text(example, dataset_name)
 
-def build_vocab_from_counts(counts, max_words):
-    vocab = {tok: idx for idx, tok in enumerate(SPECIAL_TOKENS)}
-    reserved = set(SPECIAL_TOKENS)
-    for word, _ in counts.most_common():
-        if len(vocab) >= max_words:
-            break
-        if word in reserved:
-            continue
-        vocab[word] = len(vocab)
-    return vocab
+def train_tokenizer(datasets_and_names, max_words):
+    tokenizer = Tokenizer(BPE(unk_token=UNK_TOKEN))
+    tokenizer.normalizer = Lowercase()
+    tokenizer.pre_tokenizer = WhitespaceSplit()
+    trainer = BpeTrainer(
+        vocab_size=max_words,
+        special_tokens=SPECIAL_TOKENS,
+        end_of_word_suffix="</w>",
+    )
+    tokenizer.train_from_iterator(text_iterator(datasets_and_names), trainer=trainer)
+    return tokenizer
 
-def encode_split(dataset, dataset_name, vocab, out_path):
-    unk_idx = vocab[UNK_TOKEN]
-    eos_idx = vocab[EOS_TOKEN]
+def encode_split(dataset, dataset_name, tokenizer, out_path):
+    eos_idx = tokenizer.token_to_id(EOS_TOKEN)
     ids = []
     for example in tqdm(dataset, desc=f"Encoding {out_path}"):
-        for tok in tokenize(get_text(example, dataset_name)):
-            ids.append(vocab.get(tok, unk_idx))
+        ids.extend(tokenizer.encode(get_text(example, dataset_name)).ids)
         ids.append(eos_idx)
     with open(out_path, "wb") as f:
         f.write(struct.pack(f"{len(ids)}H", *ids))
     print(f"  {out_path}: {len(ids):,} tokens")
 
-def save_vocab(vocab, path):
-    with open(path, "w") as f:
-        json.dump(vocab, f)
-    print(f"  Vocab saved to {path} ({len(vocab)} words)")
-
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset", choices=["tinystories", "dailydialog", "combined"], default="tinystories")
 args = parser.parse_args()
-
-vocab_path = f"{DATA_DIR}/vocab.json"
 
 if args.dataset == "combined":
     print("Loading TinyStories...")
@@ -96,20 +79,18 @@ if args.dataset == "combined":
     print("Loading DailyDialog...")
     ds_dd = load_raw_dataset("dailydialog")
 
-    print("Building shared vocab from both datasets (user/bot reserved)...")
-    counts = Counter()
-    count_words(ds_ts["train"], "tinystories", counts)
-    count_words(ds_dd["train"], "dailydialog", counts)
-    vocab = build_vocab_from_counts(counts, VOCAB_SIZE)
-    save_vocab(vocab, vocab_path)
+    print("Training shared BPE tokenizer from both datasets...")
+    tokenizer = train_tokenizer([(ds_ts["train"], "tinystories"), (ds_dd["train"], "dailydialog")], VOCAB_SIZE)
+    tokenizer.model.save(DATA_DIR)
+    print(f"  Vocab saved to {DATA_DIR}/vocab.json + {DATA_DIR}/merges.txt ({tokenizer.get_vocab_size()} tokens)")
 
     print("Encoding TinyStories (phase 1: pretrain)...")
-    encode_split(ds_ts["train"],      "tinystories", vocab, f"{DATA_DIR}/train_tinystories.bin")
-    encode_split(ds_ts["validation"], "tinystories", vocab, f"{DATA_DIR}/val_tinystories.bin")
+    encode_split(ds_ts["train"],      "tinystories", tokenizer, f"{DATA_DIR}/train_tinystories.bin")
+    encode_split(ds_ts["validation"], "tinystories", tokenizer, f"{DATA_DIR}/val_tinystories.bin")
 
     print("Encoding DailyDialog (phase 2: fine-tune)...")
-    encode_split(ds_dd["train"],      "dailydialog", vocab, f"{DATA_DIR}/train_dailydialog.bin")
-    encode_split(ds_dd["validation"], "dailydialog", vocab, f"{DATA_DIR}/val_dailydialog.bin")
+    encode_split(ds_dd["train"],      "dailydialog", tokenizer, f"{DATA_DIR}/train_dailydialog.bin")
+    encode_split(ds_dd["validation"], "dailydialog", tokenizer, f"{DATA_DIR}/val_dailydialog.bin")
 
     print("Done. Copy the phase-1 (tinystories) files to data/train.bin + data/val.bin to")
     print("pretrain, then copy the phase-2 (dailydialog) files over them to fine-tune.")
@@ -117,14 +98,13 @@ else:
     print(f"Loading dataset ({args.dataset})...")
     ds = load_raw_dataset(args.dataset)
 
-    print("Building vocab from train split...")
-    counts = Counter()
-    count_words(ds["train"], args.dataset, counts)
-    vocab = build_vocab_from_counts(counts, VOCAB_SIZE)
-    save_vocab(vocab, vocab_path)
+    print("Training BPE tokenizer from train split...")
+    tokenizer = train_tokenizer([(ds["train"], args.dataset)], VOCAB_SIZE)
+    tokenizer.model.save(DATA_DIR)
+    print(f"  Vocab saved to {DATA_DIR}/vocab.json + {DATA_DIR}/merges.txt ({tokenizer.get_vocab_size()} tokens)")
 
     print("Encoding splits...")
-    encode_split(ds["train"],      args.dataset, vocab, f"{DATA_DIR}/train.bin")
-    encode_split(ds["validation"], args.dataset, vocab, f"{DATA_DIR}/val.bin")
+    encode_split(ds["train"],      args.dataset, tokenizer, f"{DATA_DIR}/train.bin")
+    encode_split(ds["validation"], args.dataset, tokenizer, f"{DATA_DIR}/val.bin")
 
     print("Done.")

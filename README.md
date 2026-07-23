@@ -12,7 +12,7 @@ include/, src/          Core library: Tensor, Node/ExecutionGraph (autograd), La
                          and Cuda* files for the optional GPU backend.
 src/main.cpp             Fixed training entry point (trains TransformerMiniModel on TinyStories).
 scripts/download_dataset.py  Downloads TinyStories via HuggingFace `datasets`.
-scripts/build_vocab.py       Builds a word-level vocab and encodes train/val splits to .bin token files.
+scripts/build_vocab.py       Trains a BPE tokenizer and encodes train/val splits to .bin token files.
 CMakeLists.txt           Build definition; `USE_CUDA` option toggles the cuBLAS/CUDA backend.
 ```
 
@@ -22,7 +22,7 @@ Data (`data/`) and checkpoints (`*.mlt`) are gitignored — you generate/produce
 
 - CMake ≥ 3.20 and a C++20 compiler (MSVC, GCC, or Clang)
 - Optional: CUDA Toolkit (for `-DUSE_CUDA=ON`, uses cuBLAS + custom kernels)
-- Python 3 with `requirements.txt` (`datasets`, `python-dotenv`, `tqdm`) for data preparation only — not needed to build/run the C++ code
+- Python 3 with `requirements.txt` (`datasets`, `python-dotenv`, `tqdm`, `tokenizers`) for data preparation only — not needed to build/run the C++ code
 
 ## 1. Prepare the data
 
@@ -34,7 +34,7 @@ python scripts/download_dataset.py   # caches TinyStories under data/tinystories
 python scripts/build_vocab.py        # writes data/vocab.json, data/train.bin, data/val.bin
 ```
 
-`build_vocab.py` builds a 4096-word vocabulary (with `<PAD>`, `<UNK>`, `<EOS>`) and encodes each split into a flat binary file of `uint16` token IDs, matching what `DataLoader` expects.
+`build_vocab.py` trains a 4096-token BPE tokenizer (classic word-boundary BPE, `<PAD>`/`<UNK>`/`<EOS>` as special tokens) via HuggingFace `tokenizers`, writing `data/vocab.json` + `data/merges.txt`, and encodes each split into a flat binary file of `uint16` token IDs, matching what `DataLoader` expects. `--dataset combined` trains one shared tokenizer across both TinyStories and DailyDialog so subword vocabulary from each corpus survives into the merged vocab — words unique to one dataset degrade to subword pieces instead of `<UNK>` when finetuning on the other.
 
 TinyStories is a public HF dataset, so no token is required. If you hit rate limits, copy `.env.example` to `.env` and set `HF_TOKEN`.
 

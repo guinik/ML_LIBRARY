@@ -5,6 +5,8 @@
 #include <sstream>
 #include <string>
 #include <unordered_map>
+#include <map>
+#include <utility>
 #include <vector>
 #include <cctype>
 #include <stdexcept>
@@ -18,6 +20,7 @@ static const size_t SEQ_LEN    = 64;
 static const size_t EMBED_DIM  = 768;
 static const size_t DK         = 768;
 static const size_t NUM_LAYERS = 6;
+static const std::string END_OF_WORD_SUFFIX = "</w>";
 
 struct Vocab
 {
@@ -88,9 +91,82 @@ static Vocab loadVocab(const std::string& path)
 	return vocab;
 }
 
-static std::vector<std::string> tokenize(const std::string& text)
+struct Merges
 {
-	std::vector<std::string> tokens;
+	std::map<std::pair<std::string, std::string>, int> rank;
+};
+
+static Merges loadMerges(const std::string& path)
+{
+	std::ifstream f(path);
+	if (!f)
+	{
+		throw std::runtime_error("cannot open merges file: " + path);
+	}
+
+	Merges merges;
+	std::string line;
+	int rank = 0;
+	while (std::getline(f, line))
+	{
+		if (line.empty() || line[0] == '#')
+		{
+			continue;
+		}
+		size_t space = line.find(' ');
+		if (space == std::string::npos)
+		{
+			continue;
+		}
+		std::string a = line.substr(0, space);
+		std::string b = line.substr(space + 1);
+		merges.rank[{a, b}] = rank++;
+	}
+	return merges;
+}
+
+// Applies the learned BPE merges (lowest rank = highest priority) to a single
+// whitespace-delimited word, matching the </w>-suffixed classic-BPE scheme
+// that scripts/build_vocab.py trains with.
+static std::vector<std::string> bpeEncodeWord(const std::string& word, const Merges& merges)
+{
+	std::vector<std::string> symbols;
+	for (char c : word)
+	{
+		symbols.push_back(std::string(1, c));
+	}
+	if (!symbols.empty())
+	{
+		symbols.back() += END_OF_WORD_SUFFIX;
+	}
+
+	while (symbols.size() > 1)
+	{
+		int bestRank = -1;
+		size_t bestIdx = 0;
+		for (size_t i = 0; i + 1 < symbols.size(); i++)
+		{
+			auto it = merges.rank.find({symbols[i], symbols[i + 1]});
+			if (it != merges.rank.end() && (bestRank == -1 || it->second < bestRank))
+			{
+				bestRank = it->second;
+				bestIdx = i;
+			}
+		}
+		if (bestRank == -1)
+		{
+			break;
+		}
+		symbols[bestIdx] += symbols[bestIdx + 1];
+		symbols.erase(symbols.begin() + bestIdx + 1);
+	}
+
+	return symbols;
+}
+
+static std::vector<uint16_t> encode(const Vocab& vocab, const Merges& merges, const std::string& text)
+{
+	std::vector<uint16_t> ids;
 	std::string lower;
 	for (char c : text)
 	{
@@ -100,31 +176,11 @@ static std::vector<std::string> tokenize(const std::string& text)
 	std::string word;
 	while (iss >> word)
 	{
-		size_t start = 0;
-		while (start < word.size() && !(std::isalnum((unsigned char)word[start]) || word[start] == '\''))
+		for (const std::string& symbol : bpeEncodeWord(word, merges))
 		{
-			start++;
+			auto it = vocab.wordToId.find(symbol);
+			ids.push_back(it != vocab.wordToId.end() ? it->second : vocab.unkId);
 		}
-		size_t end = word.size();
-		while (end > start && !(std::isalnum((unsigned char)word[end - 1]) || word[end - 1] == '\''))
-		{
-			end--;
-		}
-		if (end > start)
-		{
-			tokens.push_back(word.substr(start, end - start));
-		}
-	}
-	return tokens;
-}
-
-static std::vector<uint16_t> encode(const Vocab& vocab, const std::string& text)
-{
-	std::vector<uint16_t> ids;
-	for (auto& tok : tokenize(text))
-	{
-		auto it = vocab.wordToId.find(tok);
-		ids.push_back(it != vocab.wordToId.end() ? it->second : vocab.unkId);
 	}
 	return ids;
 }
@@ -132,16 +188,24 @@ static std::vector<uint16_t> encode(const Vocab& vocab, const std::string& text)
 static std::string decode(const Vocab& vocab, const std::vector<uint16_t>& ids)
 {
 	std::string out;
+	bool atWordStart = true;
 	for (uint16_t id : ids)
 	{
-		if (id < vocab.idToWord.size() && !vocab.idToWord[id].empty())
+		if (id >= vocab.idToWord.size() || vocab.idToWord[id].empty())
 		{
-			if (!out.empty())
-			{
-				out += ' ';
-			}
-			out += vocab.idToWord[id];
+			continue;
 		}
+
+		const std::string& token = vocab.idToWord[id];
+		bool endsWord = token.size() >= END_OF_WORD_SUFFIX.size() &&
+			token.compare(token.size() - END_OF_WORD_SUFFIX.size(), END_OF_WORD_SUFFIX.size(), END_OF_WORD_SUFFIX) == 0;
+
+		if (atWordStart && !out.empty())
+		{
+			out += ' ';
+		}
+		out += endsWord ? token.substr(0, token.size() - END_OF_WORD_SUFFIX.size()) : token;
+		atWordStart = endsWord;
 	}
 	return out;
 }
@@ -153,12 +217,14 @@ int main()
 #endif
 
 	Vocab vocab = loadVocab("../data/vocab.json");
+	Merges merges = loadMerges("../data/merges.txt");
 
 	TransformerMiniModel model(VOCAB_SIZE, EMBED_DIM, DK, NUM_LAYERS, /*causal=*/true);
 	model.load("../tinystories.mlt");
 	std::cout << "Loaded model (" << model.paramCount() << " params). Type a message, or 'quit' to exit.\n";
 
-	uint16_t userId = vocab.wordToId.count("user") ? vocab.wordToId["user"] : vocab.eosId;
+	std::vector<uint16_t> userTokens = encode(vocab, merges, "user");
+	uint16_t userId = userTokens.size() == 1 ? userTokens[0] : vocab.eosId;
 
 	while (true)
 	{
@@ -173,7 +239,7 @@ int main()
 			break;
 		}
 
-		std::vector<uint16_t> context = encode(vocab, "user " + line + " bot");
+		std::vector<uint16_t> context = encode(vocab, merges, "user " + line + " bot");
 		if (context.size() > SEQ_LEN - 1)
 		{
 			context.erase(context.begin(), context.begin() + (context.size() - (SEQ_LEN - 1)));
