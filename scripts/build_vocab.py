@@ -1,6 +1,6 @@
 import argparse
+import array
 import os
-import struct
 from dotenv import load_dotenv
 from datasets import load_dataset
 from tokenizers import Tokenizer
@@ -12,8 +12,9 @@ from tqdm import tqdm
 
 load_dotenv()
 
-VOCAB_SIZE = 4096
-DATA_DIR   = "data"
+VOCAB_SIZE   = 4096
+DATA_DIR     = "data"
+FLUSH_TOKENS = 1_000_000  # encode_split write-buffer size, keeps memory flat regardless of split size
 
 PAD_TOKEN  = "<PAD>"
 UNK_TOKEN  = "<UNK>"
@@ -61,13 +62,20 @@ def train_tokenizer(datasets_and_names, max_words):
 
 def encode_split(dataset, dataset_name, tokenizer, out_path):
     eos_idx = tokenizer.token_to_id(EOS_TOKEN)
-    ids = []
-    for example in tqdm(dataset, desc=f"Encoding {out_path}"):
-        ids.extend(tokenizer.encode(get_text(example, dataset_name)).ids)
-        ids.append(eos_idx)
+    total = 0
+    buf = array.array("H")
     with open(out_path, "wb") as f:
-        f.write(struct.pack(f"{len(ids)}H", *ids))
-    print(f"  {out_path}: {len(ids):,} tokens")
+        for example in tqdm(dataset, desc=f"Encoding {out_path}"):
+            buf.extend(tokenizer.encode(get_text(example, dataset_name)).ids)
+            buf.append(eos_idx)
+            if len(buf) >= FLUSH_TOKENS:
+                f.write(buf.tobytes())
+                total += len(buf)
+                del buf[:]
+        if buf:
+            f.write(buf.tobytes())
+            total += len(buf)
+    print(f"  {out_path}: {total:,} tokens")
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--dataset", choices=["tinystories", "dailydialog", "combined"], default="tinystories")
