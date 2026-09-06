@@ -2,16 +2,27 @@
 #include "Tensor.hpp"
 #include <string>
 #include <cmath>
-inline std::shared_ptr<Node> makeNode(std::shared_ptr<Operation> op, std::shared_ptr<Node> a, 
+inline std::shared_ptr<Node> makeNode(std::shared_ptr<Operation> op, std::shared_ptr<Node> a,
 	std::shared_ptr<Node> b = nullptr)
 {
-
-	
 	std::shared_ptr<Node> resultNode = std::make_shared<Node>(std::move(op));
-	resultNode->children = { std::move(a), std::move(b) };
-
+	if (b)
+	{
+		resultNode->children = { std::move(a), std::move(b) };
+	}
+	else
+	{
+		resultNode->children = { std::move(a) };
+	}
 	return resultNode;
+}
 
+inline std::shared_ptr<Node> makeNode3(std::shared_ptr<Operation> op, std::shared_ptr<Node> a,
+	std::shared_ptr<Node> b, std::shared_ptr<Node> c)
+{
+	std::shared_ptr<Node> resultNode = std::make_shared<Node>(std::move(op));
+	resultNode->children = { std::move(a), std::move(b), std::move(c) };
+	return resultNode;
 }
 
 std::shared_ptr<Node> operator+(std::shared_ptr<Node> a, std::shared_ptr<Node> b)
@@ -67,9 +78,7 @@ LayerNormLayer::LayerNormLayer(size_t dim, float inputEps) : eps(inputEps)
 
 std::shared_ptr<Node> LayerNormLayer::forward(const std::vector<std::shared_ptr<Node>>& inputsNodes)
 {
-	auto normed = makeNode(std::make_shared<LayerNormOperation>(eps), inputsNodes[0]);
-	auto scaled = multiply(normed, gamma);
-	return scaled + beta;
+	return makeNode3(std::make_shared<LayerNormAffineOperation>(eps), inputsNodes[0], gamma, beta);
 }
 
 
@@ -106,20 +115,20 @@ DenseLayer::DenseLayer(size_t outDim, size_t inDim, Activation inputActivation)
 
 std::shared_ptr<Node> DenseLayer::forward(const std::vector<std::shared_ptr<Node>>& inputsNodes)
 {
-	
+	auto denseNode = makeNode3(std::make_shared<DenseOperation>(), inputsNodes[0], weights, bias);
 	switch(activation)
 	{
 		case Activation::RELU:
 		{
-			return relu(matMul(inputsNodes[0], weights) + bias);
+			return relu(denseNode);
 		}
 		case Activation::SIGMOID:
 		{
-			return sigmoid(matMul(inputsNodes[0], weights) + bias);
+			return sigmoid(denseNode);
 		}
 		default:
 		{
-			return matMul(inputsNodes[0], weights) + bias;
+			return denseNode;
 
 		}
 	}

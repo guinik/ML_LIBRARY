@@ -43,7 +43,7 @@ MiniModel::MiniModel(std::vector<size_t> layerSizes)
 	substractNode->children = { _resultNode, targetNode };
 
 	std::shared_ptr<Node> lossNode = std::make_shared<Node>(std::make_shared<SquareOperation>());
-	lossNode->children = { substractNode, nullptr };
+	lossNode->children = { substractNode };
 
 	_lossNode = lossNode;
 	_targetNode = targetNode;
@@ -82,12 +82,15 @@ void MiniModel::backward()
 
 void MiniModel::dfsCleanGradients(std::shared_ptr<Node> node)
 {
-	if (!node) return;
-	dfsCleanGradients(node->children[0]);
-	dfsCleanGradients(node->children[1]);
-
+	if (!node)
+	{
+		return;
+	}
+	for (auto& child : node->children)
+	{
+		dfsCleanGradients(child);
+	}
 	node->param.clearGradients();
-
 };
 
 void MiniModel::cleanGradients()

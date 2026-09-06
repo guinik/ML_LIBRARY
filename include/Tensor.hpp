@@ -1,6 +1,8 @@
 #pragma once
 #include <vector>
 #include <memory>
+#include <functional>
+#include <utility>
 
 
 struct AbstractTensor
@@ -16,7 +18,7 @@ struct AbstractTensor
 struct Tensor : AbstractTensor
 {
 	Tensor() : dimensions(0) {};
-	Tensor(size_t  dimensionsInput, std::vector<size_t> shapes) : dimensions(dimensionsInput), shape(shapes)
+	Tensor(size_t  dimensionsInput, std::vector<size_t> shapes) : shape(shapes), dimensions(dimensionsInput)
 	{
 		size_t totalParameters{ 1 };
 		strides = shapes;
@@ -31,8 +33,13 @@ struct Tensor : AbstractTensor
 	};
 
 	Tensor(const Tensor& other)
-		: dimensions(other.dimensions), shape(other.shape), strides(other.strides),
-		  data(other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr) {}
+		: shape(other.shape), strides(other.strides),
+		  data(other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr),
+		  dimensions(other.dimensions)
+#ifdef USE_CUDA
+		, d_data(other.d_data)
+#endif
+	{}
 
 	Tensor& operator=(const Tensor& other)
 	{
@@ -42,6 +49,33 @@ struct Tensor : AbstractTensor
 			strides    = other.strides;
 			data       = other.data ? std::make_shared<std::vector<float>>(*other.data) : nullptr;
 			dimensions = other.dimensions;
+#ifdef USE_CUDA
+			d_data     = other.d_data;
+#endif
+		}
+		return *this;
+	}
+
+	Tensor(Tensor&& other) noexcept
+		: shape(std::move(other.shape)), strides(std::move(other.strides)),
+		  data(std::move(other.data)),
+		  dimensions(other.dimensions)
+#ifdef USE_CUDA
+		, d_data(std::move(other.d_data))
+#endif
+	{}
+
+	Tensor& operator=(Tensor&& other) noexcept
+	{
+		if (this != &other)
+		{
+			shape      = std::move(other.shape);
+			strides    = std::move(other.strides);
+			data       = std::move(other.data);
+			dimensions = other.dimensions;
+#ifdef USE_CUDA
+			d_data     = std::move(other.d_data);
+#endif
 		}
 		return *this;
 	}
@@ -60,6 +94,21 @@ struct Tensor : AbstractTensor
 	std::vector<size_t> strides;
 	std::shared_ptr<std::vector<float>> data;
 	size_t dimensions;
+
+#ifdef USE_CUDA
+	mutable std::shared_ptr<float> d_data;
+	void toGPU() const;
+	void toCPU() const;
+	void invalidateGPU() const;
+	bool onGPU() const { return d_data != nullptr; }
+#endif
+
+	size_t nelems() const
+	{
+		size_t n = 1;
+		for (auto d : shape) { n *= d; }
+		return n;
+	}
 
 	void transpose();
 	void fillValues(float value);

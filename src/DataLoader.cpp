@@ -97,19 +97,29 @@ std::pair<Tensor, Tensor> DataLoader::nextBatch()
     return {input, target};
 }
 
+static const std::string END_OF_WORD_SUFFIX = "</w>";
+
 std::string DataLoader::decode(const std::vector<uint16_t>& ids) const
 {
     std::string result;
+    bool atWordStart = true;
     for (uint16_t id : ids)
     {
-        if (id < _idxToWord.size() && !_idxToWord[id].empty())
+        if (id >= _idxToWord.size() || _idxToWord[id].empty())
         {
-            if (!result.empty())
-            {
-                result += ' ';
-            }
-            result += _idxToWord[id];
+            continue;
         }
+
+        const std::string& token = _idxToWord[id];
+        bool endsWord = token.size() >= END_OF_WORD_SUFFIX.size() &&
+            token.compare(token.size() - END_OF_WORD_SUFFIX.size(), END_OF_WORD_SUFFIX.size(), END_OF_WORD_SUFFIX) == 0;
+
+        if (atWordStart && !result.empty())
+        {
+            result += ' ';
+        }
+        result += endsWord ? token.substr(0, token.size() - END_OF_WORD_SUFFIX.size()) : token;
+        atWordStart = endsWord;
     }
     return result;
 }

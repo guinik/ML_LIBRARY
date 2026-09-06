@@ -60,11 +60,18 @@ void ExecutionGraph::computeForward()
 
 void ExecutionGraph::computeBackward()
 {
-
-	for(size_t i{ _executionOrder.size()}; i-- > 0;)
+	for (size_t i{ _executionOrder.size() }; i-- > 0;)
 	{
 		_executionOrder[i]->backward();
 	}
-};
+}
+
+void ExecutionGraph::cleanGradients()
+{
+	for (auto& node : _executionOrder)
+	{
+		node->param.clearGradients();
+	}
+}
 
 

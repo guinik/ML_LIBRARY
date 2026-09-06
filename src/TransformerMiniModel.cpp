@@ -1,5 +1,6 @@
 #include "TransformerMiniModel.hpp"
 #include "Serialization.hpp"
+#include <utility>
 
 void TransformerMiniModel::registerLayer(const std::string& name, Layer& layer)
 {
@@ -79,9 +80,9 @@ Tensor TransformerMiniModel::forward(Tensor input, Tensor target)
         }
     }
 
-    _inputNode->param.value = input;
-    _posNode->param.value = pos;
-    _targetNode->param.value = target;
+    _inputNode->param.value = std::move(input);
+    _posNode->param.value = std::move(pos);
+    _targetNode->param.value = std::move(target);
 
     if (_executionGraph.has_value())
     {
@@ -92,7 +93,7 @@ Tensor TransformerMiniModel::forward(Tensor input, Tensor target)
 
 void TransformerMiniModel::backward()
 {
-    _lossNode->param.grad = _lossNode->param.value;
+    _lossNode->param.grad = Tensor(_lossNode->param.value.dimensions, _lossNode->param.value.shape);
     _lossNode->param.grad.fillValues(1.0f);
     if (_executionGraph.has_value())
     {
@@ -100,20 +101,12 @@ void TransformerMiniModel::backward()
     }
 }
 
-void TransformerMiniModel::dfsCleanGradients(std::shared_ptr<Node> node)
-{
-    if (!node)
-    {
-        return;
-    }
-    dfsCleanGradients(node->children[0]);
-    dfsCleanGradients(node->children[1]);
-    node->param.clearGradients();
-}
-
 void TransformerMiniModel::cleanGradients()
 {
-    dfsCleanGradients(_lossNode);
+    if (_executionGraph.has_value())
+    {
+        _executionGraph.value().cleanGradients();
+    }
 }
 
 void TransformerMiniModel::applyGradient(float lr)
@@ -129,6 +122,9 @@ std::map<std::string, Tensor> TransformerMiniModel::stateDict() const
     std::map<std::string, Tensor> sd;
     for (auto& [name, node] : _namedParams)
     {
+#ifdef USE_CUDA
+        node->param.value.toCPU();
+#endif
         sd[name] = node->param.value;
     }
     return sd;

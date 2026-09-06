@@ -1,7 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
-project(ML_LIBRARY)
 
+option(USE_CUDA "Enable CUDA/cuBLAS acceleration for matrix multiplications" OFF)
 
+if(USE_CUDA)
+    project(ML_LIBRARY LANGUAGES CXX CUDA)
+else()
+    project(ML_LIBRARY LANGUAGES CXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,6 +24,13 @@ set(ML_SOURCES
 	src/DataLoader.cpp
 )
 
+if(USE_CUDA)
+    list(APPEND ML_SOURCES src/CudaMatMul.cu)
+    list(APPEND ML_SOURCES src/CudaOps.cu)
+    list(APPEND ML_SOURCES src/CudaOptimizer.cu)
+    list(APPEND ML_SOURCES src/CudaPool.cu)
+endif()
+
 set(ML_HEADERS
 	include/Parameter.hpp
 	include/Tensor.hpp
@@ -30,7 +42,11 @@ set(ML_HEADERS
 	include/Layers.hpp
 	include/Serialization.hpp
 	include/DataLoader.hpp
+	include/CudaMatMul.hpp
+	include/CudaOps.hpp
+	include/CudaPool.hpp
 )
+
 
 
 source_group("Sources" FILES ${ML_SOURCES})
@@ -39,12 +55,19 @@ source_group("Headers" FILES ${ML_HEADERS})
 
 add_library(ML_LIBRARY STATIC ${ML_SOURCES} ${ML_HEADERS})
 if(MSVC)
-    target_compile_options(ML_LIBRARY PRIVATE /W4 /WX)
+    target_compile_options(ML_LIBRARY PRIVATE $<$<COMPILE_LANGUAGE:CXX>:/W4 /WX>)
 else()
-    target_compile_options(ML_LIBRARY PRIVATE -Wall -Wextra -Werror -O3)
+    target_compile_options(ML_LIBRARY PRIVATE $<$<COMPILE_LANGUAGE:CXX>:-Wall -Wextra -Werror -O3>)
 endif()
 
 target_include_directories(ML_LIBRARY PUBLIC include)
+
+if(USE_CUDA)
+    find_package(CUDAToolkit REQUIRED)
+    target_compile_definitions(ML_LIBRARY PUBLIC USE_CUDA)
+    target_link_libraries(ML_LIBRARY PUBLIC CUDA::cublas CUDA::cublasLt CUDA::cudart)
+    set_target_properties(ML_LIBRARY PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+endif()
 
 add_executable(EXECUTE src/main.cpp)
 
@@ -53,3 +76,61 @@ if(NOT MSVC)
 endif()
 
 target_link_libraries(EXECUTE PRIVATE ML_LIBRARY)
+
+add_executable(BENCHMARK src/benchmark.cpp)
+
+if(NOT MSVC)
+    target_compile_options(BENCHMARK PRIVATE -O3)
+endif()
+
+target_link_libraries(BENCHMARK PRIVATE ML_LIBRARY)
+
+add_executable(CHAT src/chat.cpp)
+
+if(NOT MSVC)
+    target_compile_options(CHAT PRIVATE -O3)
+endif()
+
+target_link_libraries(CHAT PRIVATE ML_LIBRARY)
+
+if(USE_CUDA)
+    add_executable(TEST_MATMUL src/test_matmul.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_MATMUL PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_MATMUL PRIVATE ML_LIBRARY)
+
+    add_executable(TEST_WEIGHT_GRAD src/test_weight_grad.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_WEIGHT_GRAD PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_WEIGHT_GRAD PRIVATE ML_LIBRARY)
+
+    add_executable(TEST_UNBROADCAST src/test_unbroadcast.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_UNBROADCAST PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_UNBROADCAST PRIVATE ML_LIBRARY)
+
+    add_executable(TEST_DENSE_OP src/test_dense_op.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_DENSE_OP PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_DENSE_OP PRIVATE ML_LIBRARY)
+
+    add_executable(TEST_LAYERNORM_OP src/test_layernorm_op.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_LAYERNORM_OP PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_LAYERNORM_OP PRIVATE ML_LIBRARY)
+endif()
