@@ -214,6 +214,31 @@ struct CausalMaskOperation : Operation
 	bool isGpuOp() const override { return true; }
 };
 
+// (batch, seq, heads*dHead) -> (batch, heads, seq, dHead), used to fan a fused Q/K/V
+// projection out into per-head attention matrices
+struct SplitHeadsOperation : Operation
+{
+	size_t numHeads;
+	SplitHeadsOperation(size_t heads) : numHeads(heads) {}
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<const Tensor*>& inputs,
+		const Tensor&,
+		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
+};
+
+// inverse of SplitHeadsOperation: (batch, heads, seq, dHead) -> (batch, seq, heads*dHead)
+struct MergeHeadsOperation : Operation
+{
+	Tensor forward(const std::vector<const Tensor*>& inputs) const override;
+	std::vector<Tensor> backward(
+		const std::vector<const Tensor*>& inputs,
+		const Tensor&,
+		const Tensor& gradOutput) const override;
+	bool isGpuOp() const override { return true; }
+};
+
 struct MultiplyOperation : Operation
 {
 	Tensor forward(const std::vector<const Tensor*>& inputs) const override;

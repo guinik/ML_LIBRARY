@@ -20,7 +20,7 @@ void TransformerMiniModel::registerLayer(Layer& layer)
     registerLayer(name, layer);
 }
 
-TransformerMiniModel::TransformerMiniModel(size_t vocabSize, size_t embedDim, size_t dK, size_t numAttentionLayers, bool causal)
+TransformerMiniModel::TransformerMiniModel(size_t vocabSize, size_t embedDim, size_t dK, size_t numAttentionLayers, size_t numHeads, bool causal)
 {
     _inputNode = std::make_shared<Node>();
     _posNode = std::make_shared<Node>();
@@ -34,7 +34,7 @@ TransformerMiniModel::TransformerMiniModel(size_t vocabSize, size_t embedDim, si
 
     for (size_t i = 0; i < numAttentionLayers; i++)
     {
-        auto attn = SingleHeadAttention(embedDim, dK, causal);
+        auto attn = MultiHeadAttention(embedDim, dK, numHeads, causal);
         auto attended = attn.forward({current});
         registerLayer(attn);
 

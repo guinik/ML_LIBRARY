@@ -2,6 +2,7 @@
 #include "Tensor.hpp"
 #include <string>
 #include <cmath>
+#include <stdexcept>
 inline std::shared_ptr<Node> makeNode(std::shared_ptr<Operation> op, std::shared_ptr<Node> a,
 	std::shared_ptr<Node> b = nullptr)
 {
@@ -58,6 +59,16 @@ std::shared_ptr<Node> softmax(std::shared_ptr<Node> a)
 std::shared_ptr<Node> causalMask(std::shared_ptr<Node> a)
 {
 	return makeNode(std::make_shared<CausalMaskOperation>(), std::move(a));
+}
+
+std::shared_ptr<Node> splitHeads(std::shared_ptr<Node> a, size_t numHeads)
+{
+	return makeNode(std::make_shared<SplitHeadsOperation>(numHeads), std::move(a));
+}
+
+std::shared_ptr<Node> mergeHeads(std::shared_ptr<Node> a)
+{
+	return makeNode(std::make_shared<MergeHeadsOperation>(), std::move(a));
 }
 
 std::shared_ptr<Node> multiply(std::shared_ptr<Node> a, std::shared_ptr<Node> b)
@@ -138,8 +149,13 @@ std::shared_ptr<Node> DenseLayer::forward(const std::vector<std::shared_ptr<Node
 
 
 
-SingleHeadAttention::SingleHeadAttention(size_t d_model, size_t d_k, bool inputCausal)
+MultiHeadAttention::MultiHeadAttention(size_t d_model, size_t d_k, size_t inputNumHeads, bool inputCausal)
 {
+	if (d_k % inputNumHeads != 0)
+	{
+		throw std::invalid_argument("MultiHeadAttention: d_k must be divisible by numHeads");
+	}
+
 	size_t numDimensionsWeight{ 2 };
 	queryWeights = std::make_shared<Node>();
 	keyWeights = std::make_shared<Node>();
@@ -156,23 +172,31 @@ SingleHeadAttention::SingleHeadAttention(size_t d_model, size_t d_k, bool inputC
 	outputWeights->param.value.randomize(1.0f / std::sqrt((float)d_k));
 
 	internalDim = d_k;
+	numHeads = inputNumHeads;
+	headDim = d_k / inputNumHeads;
 	causal = inputCausal;
 	parameters = {{"wq", queryWeights}, {"wk", keyWeights}, {"wv", valueWeights}, {"wo", outputWeights}};
 }
 
-std::shared_ptr<Node> SingleHeadAttention::forward(const std::vector<std::shared_ptr<Node>>& inputsNodes)
+std::shared_ptr<Node> MultiHeadAttention::forward(const std::vector<std::shared_ptr<Node>>& inputsNodes)
 {
 	auto Q = matMul(inputsNodes[0], queryWeights);
 	auto K = matMul(inputsNodes[0], keyWeights);
 	auto V = matMul(inputsNodes[0], valueWeights);
-	auto QK = matMul(Q, K);
-	auto normalized = QK * (1.0f / std::sqrt((float)internalDim));
+
+	auto Qh = splitHeads(Q, numHeads);
+	auto Kh = splitHeads(K, numHeads);
+	auto Vh = splitHeads(V, numHeads);
+
+	auto QK = matMul(Qh, Kh);
+	auto normalized = QK * (1.0f / std::sqrt((float)headDim));
 	if (causal)
 	{
 		normalized = causalMask(normalized);
 	}
 	auto softmaxRes = softmax(normalized);
-	auto attention = matMul(softmaxRes, V, MatMulFlags::MATMUL_NO_TRANSPOSES);
+	auto attentionHeads = matMul(softmaxRes, Vh, MatMulFlags::MATMUL_NO_TRANSPOSES);
+	auto attention = mergeHeads(attentionHeads);
 	auto output = matMul(attention, outputWeights);
 	return output;
 };

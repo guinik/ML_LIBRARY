@@ -94,10 +94,26 @@ namespace
 		const float* dataB = B.data->data();
 		float* dataR = result.data->data();
 
+		// per-batch-dim strides, zeroed wherever that operand broadcasts (size 1) over the
+		// dim -- a flat `b * stridesA[0]` only works for a single batch dim, so batch offsets
+		// are accumulated dim-by-dim to support stacked batch dims (e.g. multi-head attention's
+		// (batch, heads, seq, dHead))
+		std::vector<size_t> effStridesA(batchDimsA), effStridesB(batchDimsA);
+		for (size_t i = 0; i < batchDimsA; i++)
+		{
+			effStridesA[i] = (shapeA[i] == 1 && batchShape[i] != 1) ? 0 : stridesA[i];
+			effStridesB[i] = (shapeB[i] == 1 && batchShape[i] != 1) ? 0 : stridesB[i];
+		}
+
+		std::vector<size_t> batchIdx(batchDimsA, 0);
 		for (size_t b{ 0 }; b < batchCount; b++)
 		{
-			size_t baseA = b * stridesA[0];
-			size_t baseB = b * stridesB[0];
+			size_t baseA = 0, baseB = 0;
+			for (size_t d = 0; d < batchDimsA; d++)
+			{
+				baseA += batchIdx[d] * effStridesA[d];
+				baseB += batchIdx[d] * effStridesB[d];
+			}
 			size_t baseR = b * M * N;
 			for (size_t m{ 0 }; m < M; m++)
 			{
@@ -113,6 +129,12 @@ namespace
 					}
 					dataR[rowR + n * strideR_col] = sum;
 				}
+			}
+
+			for (size_t d = batchDimsA; d-- > 0; )
+			{
+				if (++batchIdx[d] < batchShape[d]) { break; }
+				batchIdx[d] = 0;
 			}
 		}
 
@@ -185,6 +207,63 @@ namespace
 			{
 				if (++idx[d] < resultShape[d]) { break; }
 				idx[d] = 0;
+			}
+		}
+		return result;
+	}
+#endif
+
+#ifndef USE_CUDA
+	// (batch, seq, heads*dHead) -> (batch, heads, seq, dHead)
+	Tensor headsToBatch(const Tensor& x, size_t heads)
+	{
+		size_t batch = x.shape[0];
+		size_t seq   = x.shape[1];
+		size_t dK    = x.shape[2];
+		size_t dHead = dK / heads;
+
+		Tensor result(4, { batch, heads, seq, dHead });
+		const float* src = x.data->data();
+		float* dst = result.data->data();
+		for (size_t b = 0; b < batch; b++)
+		{
+			for (size_t h = 0; h < heads; h++)
+			{
+				for (size_t s = 0; s < seq; s++)
+				{
+					for (size_t d = 0; d < dHead; d++)
+					{
+						dst[((b * heads + h) * seq + s) * dHead + d] = src[(b * seq + s) * dK + h * dHead + d];
+					}
+				}
+			}
+		}
+		return result;
+	}
+
+	// (batch, heads, seq, dHead) -> (batch, seq, heads*dHead), the inverse of headsToBatch
+	Tensor batchToHeads(const Tensor& x)
+	{
+		size_t batch = x.shape[0];
+		size_t heads = x.shape[1];
+		size_t seq   = x.shape[2];
+		size_t dHead = x.shape[3];
+		size_t dK    = heads * dHead;
+
+		Tensor result(3, { batch, seq, dK });
+		const float* src = x.data->data();
+		float* dst = result.data->data();
+		for (size_t b = 0; b < batch; b++)
+		{
+			for (size_t h = 0; h < heads; h++)
+			{
+				for (size_t s = 0; s < seq; s++)
+				{
+					for (size_t d = 0; d < dHead; d++)
+					{
+						dst[(b * seq + s) * dK + h * dHead + d] = src[((b * heads + h) * seq + s) * dHead + d];
+					}
+				}
 			}
 		}
 		return result;
@@ -730,6 +809,49 @@ std::vector<Tensor> CausalMaskOperation::backward(const std::vector<const Tensor
 	const Tensor& gradOutput) const
 {
 	return { gradOutput };
+}
+
+// split/merge are pure bijective reindexes (no reduction, no broadcast), so each op's
+// backward is just the other op's forward index math applied to gradOutput
+Tensor SplitHeadsOperation::forward(const std::vector<const Tensor*>& inputs) const
+{
+#ifdef USE_CUDA
+	return cudaSplitHeads(*inputs[0], numHeads);
+#else
+	return headsToBatch(*inputs[0], numHeads);
+#endif
+}
+
+std::vector<Tensor> SplitHeadsOperation::backward(const std::vector<const Tensor*>&,
+	const Tensor&,
+	const Tensor& gradOutput) const
+{
+#ifdef USE_CUDA
+	return { cudaMergeHeads(gradOutput) };
+#else
+	return { batchToHeads(gradOutput) };
+#endif
+}
+
+Tensor MergeHeadsOperation::forward(const std::vector<const Tensor*>& inputs) const
+{
+#ifdef USE_CUDA
+	return cudaMergeHeads(*inputs[0]);
+#else
+	return batchToHeads(*inputs[0]);
+#endif
+}
+
+std::vector<Tensor> MergeHeadsOperation::backward(const std::vector<const Tensor*>& inputs,
+	const Tensor&,
+	const Tensor& gradOutput) const
+{
+	size_t heads = inputs[0]->shape[1];
+#ifdef USE_CUDA
+	return { cudaSplitHeads(gradOutput, heads) };
+#else
+	return { headsToBatch(gradOutput, heads) };
+#endif
 }
 
 Tensor unbroadcastGrad(const Tensor& grad, const std::vector<size_t>& targetShape)

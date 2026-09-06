@@ -9,7 +9,7 @@
 
 struct TransformerMiniModel
 {
-    TransformerMiniModel(size_t vocabSize, size_t embedDim, size_t dK, size_t numAttentionLayers, bool causal = false);
+    TransformerMiniModel(size_t vocabSize, size_t embedDim, size_t dK, size_t numAttentionLayers, size_t numHeads, bool causal = false);
 
     std::shared_ptr<Node> _inputNode;
     std::shared_ptr<Node> _posNode;

@@ -153,6 +153,29 @@ __global__ void causalMaskKernel(float* data, int numMatrices, int seq)
     if (col > row) { data[idx] = -1e9f; }
 }
 
+// one thread per output element; (batch, seq, heads*dHead) -> (batch, heads, seq, dHead)
+__global__ void splitHeadsKernel(const float* in, float* out, int total, int seq, int heads, int dHead)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= total) { return; }
+    int d = idx % dHead; int tmp = idx / dHead;
+    int s = tmp % seq;   tmp /= seq;
+    int h = tmp % heads; int b = tmp / heads;
+    int dK = heads * dHead;
+    out[idx] = in[(b * seq + s) * dK + h * dHead + d];
+}
+
+// one thread per output element; inverse of splitHeadsKernel
+__global__ void mergeHeadsKernel(const float* in, float* out, int total, int seq, int heads, int dHead)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= total) { return; }
+    int d = idx % dHead; int tmp = idx / dHead;
+    int h = tmp % heads; tmp /= heads;
+    int s = tmp % seq;   int b = tmp / seq;
+    out[idx] = in[((b * heads + h) * seq + s) * dHead + d];
+}
+
 __global__ void softmaxKernel(const float* in, float* out, int rows, int cols)
 {
     extern __shared__ float smem[];
@@ -880,6 +903,40 @@ Tensor cudaCausalMask(const Tensor& A)
     int blocks = ((int)total + threads - 1) / threads;
     causalMaskKernel<<<blocks, threads>>>(dOut, numMatrices, seq);
     return makeCudaTensor(A.shape, dOut);
+}
+
+Tensor cudaSplitHeads(const Tensor& x, size_t heads)
+{
+    x.toGPU();
+    int batch = (int)x.shape[0];
+    int seq   = (int)x.shape[1];
+    int dK    = (int)x.shape[2];
+    int dHead = dK / (int)heads;
+
+    std::vector<size_t> outShape = { (size_t)batch, heads, (size_t)seq, (size_t)dHead };
+    size_t n = x.nelems();
+    float* dOut = cudaPoolAlloc(n);
+    int threads = 256;
+    int blocks = ((int)n + threads - 1) / threads;
+    splitHeadsKernel<<<blocks, threads>>>(x.d_data.get(), dOut, (int)n, seq, (int)heads, dHead);
+    return makeCudaTensor(outShape, dOut);
+}
+
+Tensor cudaMergeHeads(const Tensor& x)
+{
+    x.toGPU();
+    int batch = (int)x.shape[0];
+    int heads = (int)x.shape[1];
+    int seq   = (int)x.shape[2];
+    int dHead = (int)x.shape[3];
+
+    std::vector<size_t> outShape = { (size_t)batch, (size_t)seq, (size_t)(heads * dHead) };
+    size_t n = x.nelems();
+    float* dOut = cudaPoolAlloc(n);
+    int threads = 256;
+    int blocks = ((int)n + threads - 1) / threads;
+    mergeHeadsKernel<<<blocks, threads>>>(x.d_data.get(), dOut, (int)n, seq, heads, dHead);
+    return makeCudaTensor(outShape, dOut);
 }
 
 Tensor cudaEmbeddingForward(const Tensor& ids, const Tensor& weights)

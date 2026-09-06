@@ -15,10 +15,15 @@
 #endif
 
 static const size_t VOCAB_SIZE     = 4096;
-static const size_t SEQ_LEN        = 64;
+static const size_t SEQ_LEN        = 256;
 static const size_t EMBED_DIM      = 768;
 static const size_t DK             = 768;
-static const size_t NUM_LAYERS     = 6;
+static const size_t NUM_HEADS      = 12;
+static const size_t NUM_LAYERS     = 10;
+// tune this on the actual training instance via BENCHMARK before committing to a long run --
+// every intermediate activation (including the batch*heads*seq*seq attention-score tensor per
+// layer) is kept as a full fp32 tensor with no recomputation/checkpointing, so real VRAM use at
+// seq_len=256 isn't reliably predictable from param count alone
 static const size_t BATCH_SIZE     = 16;
 static const int    PRETRAIN_STEPS = 100000;
 static const int    FINETUNE_STEPS = 15000;
@@ -145,7 +150,7 @@ int main()
     cudaMatMulInit();
 #endif
 
-    TransformerMiniModel model(VOCAB_SIZE, EMBED_DIM, DK, NUM_LAYERS, /*causal=*/true);
+    TransformerMiniModel model(VOCAB_SIZE, EMBED_DIM, DK, NUM_LAYERS, NUM_HEADS, /*causal=*/true);
     std::cout << "Parameters: " << model.paramCount() << "\n";
 
     {

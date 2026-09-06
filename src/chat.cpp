@@ -16,10 +16,11 @@
 #endif
 
 static const size_t VOCAB_SIZE = 4096;
-static const size_t SEQ_LEN    = 64;
+static const size_t SEQ_LEN    = 256;
 static const size_t EMBED_DIM  = 768;
 static const size_t DK         = 768;
-static const size_t NUM_LAYERS = 6;
+static const size_t NUM_HEADS  = 12;
+static const size_t NUM_LAYERS = 10;
 static const std::string END_OF_WORD_SUFFIX = "</w>";
 
 struct Vocab
@@ -219,7 +220,7 @@ int main()
 	Vocab vocab = loadVocab("../data/vocab.json");
 	Merges merges = loadMerges("../data/merges.txt");
 
-	TransformerMiniModel model(VOCAB_SIZE, EMBED_DIM, DK, NUM_LAYERS, /*causal=*/true);
+	TransformerMiniModel model(VOCAB_SIZE, EMBED_DIM, DK, NUM_LAYERS, NUM_HEADS, /*causal=*/true);
 	model.load("../tinystories.mlt");
 	std::cout << "Loaded model (" << model.paramCount() << " params). Type a message, or 'quit' to exit.\n";
 

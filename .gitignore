@@ -2,3 +2,8 @@ build/*
 data/
 *.mlt
 .env
+
+infra/terraform/.terraform/
+infra/terraform/*.tfstate
+infra/terraform/*.tfstate.*
+infra/terraform/terraform.tfvars

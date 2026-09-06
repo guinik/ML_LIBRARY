@@ -14,6 +14,8 @@ Tensor cudaSoftmax(const Tensor& A);
 Tensor cudaLayerNorm(const Tensor& A, float eps);
 Tensor cudaLayerNormAffine(const Tensor& x, const Tensor& gamma, const Tensor& beta, float eps);
 Tensor cudaCausalMask(const Tensor& A);
+Tensor cudaSplitHeads(const Tensor& x, size_t heads);
+Tensor cudaMergeHeads(const Tensor& x);
 Tensor cudaEmbeddingForward(const Tensor& ids, const Tensor& weights);
 Tensor cudaCrossEntropyForward(const Tensor& logits, const Tensor& targets);
 

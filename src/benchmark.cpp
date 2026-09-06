@@ -22,6 +22,7 @@ static const size_t VOCAB_SIZE   = 4096;
 static const size_t SEQ_LEN      = 64;
 static const size_t EMBED_DIM    = 256;
 static const size_t DK           = 256;
+static const size_t NUM_HEADS    = 8;
 static const size_t NUM_LAYERS   = 6;
 static const size_t BATCH_SIZE   = 16;
 static const float  LR           = 3e-4f;
@@ -35,7 +36,7 @@ int main()
     cudaMatMulInit();
 #endif
 
-    TransformerMiniModel model(VOCAB_SIZE, EMBED_DIM, DK, NUM_LAYERS, /*causal=*/true);
+    TransformerMiniModel model(VOCAB_SIZE, EMBED_DIM, DK, NUM_LAYERS, NUM_HEADS, /*causal=*/true);
     std::cout << "Parameters: " << model.paramCount() << "\n";
 
     Tensor input(2, {BATCH_SIZE, SEQ_LEN});

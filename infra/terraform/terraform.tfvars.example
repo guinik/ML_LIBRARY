@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars and fill in. terraform.tfvars is gitignored -- don't commit it.
+
+notification_email = "you@example.com" # required, no default -- AWS Budgets alert recipient
+
+# Everything below has a sensible default (see variables.tf) -- uncomment to override.
+
+# region                = "us-east-1"
+# instance_type         = "g5.xlarge"
+# spot_max_price        = "1.00"          # USD/hr ceiling; omit to default to the on-demand price cap
+# github_repo_url       = "https://github.com/guinik/ML_LIBRARY.git"
+# git_branch            = "main"
+# budget_amount_usd     = 90
+# auto_stop_after_hours = 90
+# key_name              = "my-ssh-keypair" # optional, SSM works without this
+# root_volume_gb        = 100

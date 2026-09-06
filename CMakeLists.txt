@@ -133,4 +133,12 @@ if(USE_CUDA)
     endif()
 
     target_link_libraries(TEST_LAYERNORM_OP PRIVATE ML_LIBRARY)
+
+    add_executable(TEST_MULTIHEAD_ATTENTION src/test_multihead_attention.cpp)
+
+    if(NOT MSVC)
+        target_compile_options(TEST_MULTIHEAD_ATTENTION PRIVATE -O3)
+    endif()
+
+    target_link_libraries(TEST_MULTIHEAD_ATTENTION PRIVATE ML_LIBRARY)
 endif()

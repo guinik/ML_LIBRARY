@@ -58,7 +58,7 @@ This produces the `EXECUTE` binary in `build/`.
 
 ## 3. Train
 
-`src/main.cpp` is a fixed (non-CLI) training script — hyperparameters are constants at the top of the file (`VOCAB_SIZE=4096`, `SEQ_LEN=64`, `EMBED_DIM=256`, `NUM_LAYERS=6`, `BATCH_SIZE=16`, `STEPS=100000`, cosine LR schedule with warmup). Edit and rebuild if you want to change them.
+`src/main.cpp` is a fixed (non-CLI) training script — hyperparameters are constants at the top of the file (`VOCAB_SIZE=4096`, `SEQ_LEN=256`, `EMBED_DIM=DK=768`, `NUM_HEADS=12`, `NUM_LAYERS=10`, `BATCH_SIZE=16`, `PRETRAIN_STEPS=100000`, cosine LR schedule with warmup). Attention is multi-head (`include/Layers.hpp`'s `MultiHeadAttention`), splitting the `DK`-wide Q/K/V projections into `NUM_HEADS` heads of `DK/NUM_HEADS` each. `BATCH_SIZE` is deliberately conservative — this engine keeps every intermediate activation as a full fp32 tensor with no recomputation/activation-checkpointing, so real VRAM use isn't reliably predictable from parameter count alone; tune it upward empirically via `BENCHMARK` on whatever hardware you're training on before committing to a long run. Edit and rebuild if you want to change any of this.
 
 Run it **from the `build/` directory** — the paths `../data/train.bin`, `../data/vocab.json`, and `../tinystories.mlt` are relative to the executable's working directory, so it expects `build/` to sit directly under the repo root:
 
@@ -137,9 +137,15 @@ If a session disconnects mid-run, just re-clone/build and copy the checkpoint ba
 
 That covers running training. Saving the final model off Colab (via the same `cp` to Drive, or `files.download(...)`) and serving it are separate next steps once training is where you want it.
 
+Colab is the quick free path for verifying a change works end-to-end before spending money on it. For an actual full training run against a real budget, see below.
+
+## Running on AWS
+
+For a real training run (bigger model, more steps, dedicated GPU time) against an AWS budget, `infra/` has Terraform that provisions a spot GPU instance, builds and runs training unattended with checkpoints synced to S3, and includes cost-alert and hard-runtime-cap guardrails. See [`infra/README.md`](infra/README.md) for the full setup and cost breakdown — nothing in `infra/` runs itself, you run `terraform apply` yourself when ready.
+
 ## Benchmark: ML_LIBRARY vs PyTorch
 
-`src/benchmark.cpp` (target `BENCHMARK`) and `scripts/benchmark_pytorch.py` run the *same* model — same architecture (embedding + learned positional embedding, 6 single-head causal attention blocks with post-attention/post-FFN LayerNorm, `embed_dim × 4` ReLU FFN, `4096`-vocab output head), same dimensions (`embed_dim=256`, `seq_len=64`, `batch=16`), and the same Adam hyperparameters (`lr=3e-4`, `β1=0.9`, `β2=0.999`, `eps=1e-8`). Both use synthetic random token IDs (no data loading) so the timing only reflects forward + backward + optimizer-step compute, with 10 untimed warmup steps followed by 50 timed steps and an explicit device sync before/after timing.
+`src/benchmark.cpp` (target `BENCHMARK`) and `scripts/benchmark_pytorch.py` run the *same* model — same architecture (embedding + learned positional embedding, 6 multi-head causal attention blocks with post-attention/post-FFN LayerNorm, `embed_dim × 4` ReLU FFN, `4096`-vocab output head), same dimensions (`embed_dim=256`, `d_k=256`, `num_heads=8`, `seq_len=64`, `batch=16`), and the same Adam hyperparameters (`lr=3e-4`, `β1=0.9`, `β2=0.999`, `eps=1e-8`). Both use synthetic random token IDs (no data loading) so the timing only reflects forward + backward + optimizer-step compute, with 10 untimed warmup steps followed by 50 timed steps and an explicit device sync before/after timing.
 
 Build and run the C++ side (CUDA build, from `build/`):
 

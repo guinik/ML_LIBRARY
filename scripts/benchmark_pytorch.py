@@ -8,6 +8,7 @@ VOCAB_SIZE   = 4096
 SEQ_LEN      = 64
 EMBED_DIM    = 256
 D_K          = 256
+NUM_HEADS    = 8
 NUM_LAYERS   = 6
 BATCH_SIZE   = 16
 LR           = 3e-4
@@ -15,31 +16,39 @@ WARMUP_STEPS = 10
 BENCH_STEPS  = 50
 
 
-class SingleHeadAttention(nn.Module):
-    def __init__(self, d_model, d_k, causal):
+class MultiHeadAttention(nn.Module):
+    def __init__(self, d_model, d_k, num_heads, causal):
         super().__init__()
+        assert d_k % num_heads == 0
         self.wq = nn.Linear(d_model, d_k, bias=False)
         self.wk = nn.Linear(d_model, d_k, bias=False)
         self.wv = nn.Linear(d_model, d_k, bias=False)
         self.wo = nn.Linear(d_k, d_model, bias=False)
-        self.d_k = d_k
+        self.num_heads = num_heads
+        self.head_dim = d_k // num_heads
         self.causal = causal
 
+    def split(self, t, batch, seq):
+        return t.view(batch, seq, self.num_heads, self.head_dim).transpose(1, 2)
+
     def forward(self, x):
-        Q, K, V = self.wq(x), self.wk(x), self.wv(x)
-        scores = (Q @ K.transpose(-2, -1)) / (self.d_k ** 0.5)
+        batch, seq, _ = x.shape
+        Q = self.split(self.wq(x), batch, seq)
+        K = self.split(self.wk(x), batch, seq)
+        V = self.split(self.wv(x), batch, seq)
+        scores = (Q @ K.transpose(-2, -1)) / (self.head_dim ** 0.5)
         if self.causal:
-            seq = x.size(1)
             mask = torch.triu(torch.ones(seq, seq, device=x.device, dtype=torch.bool), diagonal=1)
             scores = scores.masked_fill(mask, float("-inf"))
         attn = torch.softmax(scores, dim=-1)
-        return self.wo(attn @ V)
+        merged = (attn @ V).transpose(1, 2).reshape(batch, seq, -1)
+        return self.wo(merged)
 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, embed_dim, d_k, causal):
+    def __init__(self, embed_dim, d_k, num_heads, causal):
         super().__init__()
-        self.attn = SingleHeadAttention(embed_dim, d_k, causal)
+        self.attn = MultiHeadAttention(embed_dim, d_k, num_heads, causal)
         self.ln1 = nn.LayerNorm(embed_dim)
         self.ffn = nn.Sequential(
             nn.Linear(embed_dim, embed_dim * 4),
@@ -54,11 +63,11 @@ class TransformerBlock(nn.Module):
 
 
 class TinyTransformer(nn.Module):
-    def __init__(self, vocab_size, embed_dim, d_k, num_layers, causal=True):
+    def __init__(self, vocab_size, embed_dim, d_k, num_heads, num_layers, causal=True):
         super().__init__()
         self.tok_emb = nn.Embedding(vocab_size, embed_dim)
         self.pos_emb = nn.Embedding(512, embed_dim)
-        self.blocks = nn.ModuleList([TransformerBlock(embed_dim, d_k, causal) for _ in range(num_layers)])
+        self.blocks = nn.ModuleList([TransformerBlock(embed_dim, d_k, num_heads, causal) for _ in range(num_layers)])
         self.out = nn.Linear(embed_dim, vocab_size)
 
     def forward(self, x):
@@ -73,7 +82,7 @@ def main():
     device = "cuda" if torch.cuda.is_available() else "cpu"
     torch.manual_seed(42)
 
-    model = TinyTransformer(VOCAB_SIZE, EMBED_DIM, D_K, NUM_LAYERS).to(device)
+    model = TinyTransformer(VOCAB_SIZE, EMBED_DIM, D_K, NUM_HEADS, NUM_LAYERS).to(device)
     n_params = sum(p.numel() for p in model.parameters())
     print(f"Device: {device}")
     print(f"Parameters: {n_params:,}")

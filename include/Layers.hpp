@@ -53,16 +53,18 @@ struct EmbeddingLayer : Layer
 	std::shared_ptr<Node> weights;
 };
 
-struct SingleHeadAttention : Layer
+struct MultiHeadAttention : Layer
 {
-	SingleHeadAttention(size_t d_model, size_t d_k, bool causal = false);
+	MultiHeadAttention(size_t d_model, size_t d_k, size_t numHeads, bool causal = false);
 	std::shared_ptr<Node> forward(const std::vector<std::shared_ptr<Node>>& inputsNodes) override;
-	std::string layerType() const override { return "attention"; }
+	std::string layerType() const override { return "multi_head_attention"; }
 
 	std::shared_ptr<Node> queryWeights;
 	std::shared_ptr<Node> keyWeights;
 	std::shared_ptr<Node> valueWeights;
 	std::shared_ptr<Node> outputWeights;
-	size_t internalDim;
+	size_t internalDim; // d_k
+	size_t numHeads;
+	size_t headDim; // internalDim / numHeads
 	bool causal;
 };
